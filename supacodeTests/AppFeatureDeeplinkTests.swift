@@ -2132,7 +2132,7 @@ struct AppFeatureDeeplinkTests {
       repositories: makeRepositoriesState(worktree: worktree),
       settings: SettingsFeature.State(),
     )
-    initialState.alert = AlertState { TextState("Quit Supacode?") }
+    initialState.alert = AlertState { TextState("Quit Kage?") }
     let store = TestStore(initialState: initialState) {
       AppFeature()
     } withDependencies: {

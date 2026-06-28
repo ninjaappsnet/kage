@@ -26,7 +26,7 @@ extension RepositoriesFeature {
   ///
   /// `.gitWorktreeDelete` removes the worktree directory (and
   /// optionally its branch) and is per-worktree; the other three
-  /// are repo-level and drop the whole section from Supacode, with
+  /// are repo-level and drop the whole section from Kage, with
   /// `.folderTrash` additionally moving the folder to the Trash.
   enum DeleteDisposition: Hashable, Sendable {
     case gitWorktreeDelete
@@ -302,7 +302,7 @@ extension RepositoriesFeature {
         TextState("Cancel")
       }
     } message: {
-      TextState("Removes the repository from Supacode. Nothing on disk is changed.")
+      TextState("Removes the repository from Kage. Nothing on disk is changed.")
     }
   }
 
@@ -326,9 +326,9 @@ extension RepositoriesFeature {
     } message: {
       TextState(
         isGitRepository
-          ? "This removes the repository from Supacode. "
+          ? "This removes the repository from Kage. "
             + "The repository and its worktrees stay on disk."
-          : "This removes the folder from Supacode. The folder stays on disk."
+          : "This removes the folder from Kage. The folder stays on disk."
       )
     }
   }

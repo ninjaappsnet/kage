@@ -813,7 +813,7 @@ struct AppFeature {
           // FD, and replaying them later would leave the CLI client hanging.
           if let responseFD {
             return sendSocketResponse(
-              clientFD: responseFD, ok: false, error: "Supacode is still loading. Try again.")
+              clientFD: responseFD, ok: false, error: "Kage is still loading. Try again.")
           }
           state.pendingDeeplinks.append(parsed)
           return .none
@@ -1951,7 +1951,7 @@ struct AppFeature {
       hasBlockingScripts: hasBlockingScripts
     )
     return AlertState {
-      TextState("Quit Supacode?")
+      TextState("Quit Kage?")
     } actions: {
       ButtonState(role: .cancel, action: .dismiss) { TextState("Cancel") }
       ButtonState(action: .confirmQuit) { TextState(context.primaryLabel) }
@@ -1968,7 +1968,7 @@ struct AppFeature {
   /// so the zmx daemon teardown completes inside the process lifetime.
   private func quitEffect(state: inout State, terminateSessions: Bool) -> Effect<Action> {
     analyticsClient.capture("app_quit", ["terminate_sessions": terminateSessions])
-    let pendingFDEffect = drainPendingResponseFD(state: &state, error: "Supacode is quitting.")
+    let pendingFDEffect = drainPendingResponseFD(state: &state, error: "Kage is quitting.")
     let terminateEffect: Effect<Action> = .run { @MainActor [terminalClient, appLifecycleClient] _ in
       if terminateSessions {
         await terminalClient.terminateAllSessions()

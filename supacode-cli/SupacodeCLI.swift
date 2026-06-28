@@ -4,7 +4,7 @@ import ArgumentParser
 struct SupacodeCLI: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "supacode",
-    abstract: "Control Supacode from the command line.",
+    abstract: "Control Kage from the command line.",
     subcommands: [
       OpenCommand.self,
       WorktreeCommand.self,

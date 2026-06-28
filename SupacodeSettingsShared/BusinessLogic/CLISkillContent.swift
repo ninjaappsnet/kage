@@ -1,11 +1,11 @@
-/// Content for the Supacode CLI skill installed into coding agent configs.
+/// Content for the Kage CLI skill installed into coding agent configs.
 nonisolated enum CLISkillContent {
   static let skillName = "supacode-cli"
 
   static let description =
-    "Control Supacode from the terminal."
-    + " Use when running Supacode CLI commands, managing worktrees, tabs, and surfaces programmatically,"
-    + " or when inside a Supacode terminal session."
+    "Control Kage from the terminal."
+    + " Use when running Kage CLI commands, managing worktrees, tabs, and surfaces programmatically,"
+    + " or when inside a Kage terminal session."
 
   // MARK: - Claude Code.
 
@@ -15,9 +15,9 @@ nonisolated enum CLISkillContent {
     description: \(description)
     ---
 
-    # Supacode CLI
+    # Kage CLI
 
-    Control Supacode from the terminal. The `supacode` command is available in all Supacode terminal sessions.
+    Control Kage from the terminal. The `supacode` command is available in all Kage terminal sessions.
 
     ## CRITICAL: ID Tracking
 
@@ -68,7 +68,7 @@ nonisolated enum CLISkillContent {
 
     ## Environment
 
-    Inside Supacode terminals, these environment variables are set automatically:
+    Inside Kage terminals, these environment variables are set automatically:
 
     | Variable | Description |
     |----------|-------------|
@@ -86,7 +86,7 @@ nonisolated enum CLISkillContent {
     ### App
 
     ```
-    supacode                          # Bring Supacode to front.
+    supacode                          # Bring Kage to front.
     supacode open                     # Same as above.
     ```
 
@@ -168,9 +168,9 @@ nonisolated enum CLISkillContent {
     version: 1.0.0
     ---
 
-    # Supacode CLI
+    # Kage CLI
 
-    Control Supacode from the terminal. The `supacode` command is available in all Supacode terminal sessions.
+    Control Kage from the terminal. The `supacode` command is available in all Kage terminal sessions.
 
     ## CRITICAL: ID Tracking
 
@@ -217,7 +217,7 @@ nonisolated enum CLISkillContent {
     """
 
   static let codexAgentsMd = """
-    # Supacode CLI
+    # Kage CLI
 
     \(description)
 
@@ -261,9 +261,9 @@ nonisolated enum CLISkillContent {
     description: \(description)
     ---
 
-    # Supacode CLI
+    # Kage CLI
 
-    Control Supacode from the terminal. The `supacode` command is available in all Supacode terminal sessions.
+    Control Kage from the terminal. The `supacode` command is available in all Kage terminal sessions.
 
     ## CRITICAL: ID Tracking
 
@@ -318,9 +318,9 @@ nonisolated enum CLISkillContent {
     description: \(description)
     ---
 
-    # Supacode CLI
+    # Kage CLI
 
-    Control Supacode from the terminal. The `supacode` command is available in all Supacode terminal sessions.
+    Control Kage from the terminal. The `supacode` command is available in all Kage terminal sessions.
 
     ## CRITICAL: ID Tracking
 
@@ -374,9 +374,9 @@ nonisolated enum CLISkillContent {
     description: \(description)
     ---
 
-    # Supacode CLI
+    # Kage CLI
 
-    Control Supacode from the terminal. The `supacode` command is available in all Supacode terminal sessions.
+    Control Kage from the terminal. The `supacode` command is available in all Kage terminal sessions.
 
     ## CRITICAL: ID Tracking
 

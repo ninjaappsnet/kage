@@ -6,11 +6,11 @@ struct CLIReferenceView: View {
       // swiftlint:disable line_length
       Section {
         Text(
-          "The \(code("supacode")) command is available in all Supacode terminal sessions. Run \(code("supacode --help")) for built-in usage information."
+          "The \(code("supacode")) command is available in all Kage terminal sessions. Run \(code("supacode --help")) for built-in usage information."
         )
         .foregroundStyle(.secondary)
         Text(
-          "Inside a Supacode terminal, flags default to the current session's IDs. Outside, pass explicit IDs from \(code("supacode worktree list")) or \(code("supacode repo list"))."
+          "Inside a Kage terminal, flags default to the current session's IDs. Outside, pass explicit IDs from \(code("supacode worktree list")) or \(code("supacode repo list"))."
         )
         .foregroundStyle(.secondary)
         Text(
@@ -20,7 +20,7 @@ struct CLIReferenceView: View {
         // swiftlint:enable line_length
       } header: {
         Text("CLI Reference").font(.title.bold())
-        Text("Control Supacode from the terminal.")
+        Text("Control Kage from the terminal.")
       }
 
       CLISection(title: "App", rows: Self.appRows)
@@ -55,7 +55,7 @@ struct CLIReferenceView: View {
   // MARK: - Row data.
 
   private static let appRows: [CLIEntry] = [
-    .init(command: "supacode", description: "Bring Supacode to front."),
+    .init(command: "supacode", description: "Bring Kage to front."),
     .init(command: "supacode open", description: "Same as above."),
   ]
 

@@ -11,7 +11,7 @@ import Foundation
 /// watcher's lifetime is simply tied to its owner.
 final class FileSystemEventWatcher: @unchecked Sendable {
   nonisolated(unsafe) private var stream: FSEventStreamRef?
-  private let queue = DispatchQueue(label: "app.supabit.supacode.file-explorer.fsevents")
+  private let queue = DispatchQueue(label: "net.ninjaapps.kage.file-explorer.fsevents")
   private let onChange: @Sendable () -> Void
 
   /// Returns `nil` if FSEvents could not create a stream for `url` (e.g. the

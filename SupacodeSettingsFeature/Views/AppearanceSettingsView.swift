@@ -27,7 +27,7 @@ public struct AppearanceSettingsView: View {
           }
         }
         Toggle(isOn: $store.terminalThemeSyncEnabled) {
-          Text("Supacode Terminal Theme")
+          Text("Kage Terminal Theme")
           Text("When off, honors your Ghostty config theme.")
         }
       }
@@ -68,7 +68,7 @@ public struct AppearanceSettingsView: View {
       Section {
         Toggle(isOn: $store.analyticsEnabled) {
           Text("Share Analytics")
-          Text("Anonymous usage data helps improve Supacode.")
+          Text("Anonymous usage data helps improve Kage.")
         }
         Toggle(isOn: $store.crashReportsEnabled) {
           Text("Share Crash Reports")
@@ -77,7 +77,7 @@ public struct AppearanceSettingsView: View {
       } header: {
         Text("Analytics")
       } footer: {
-        Text("Changes to Analytics require Supacode to restart before they take effect.")
+        Text("Changes to Analytics require Kage to restart before they take effect.")
       }
       Section("Advanced") {
         Toggle(isOn: $store.hideSingleTabBar) {

@@ -30,12 +30,12 @@ nonisolated enum SocketClient {
   static func sendAndReceive(to path: String, data: Data) throws {
     let response = try sendAndReceiveData(to: path, data: data)
     guard !response.isEmpty else {
-      throw Error.responseError("Empty response from Supacode.")
+      throw Error.responseError("Empty response from Kage.")
     }
     guard let json = try? JSONSerialization.jsonObject(with: response) as? [String: Any],
       let succeeded = json["ok"] as? Bool
     else {
-      throw Error.responseError("Malformed response from Supacode.")
+      throw Error.responseError("Malformed response from Kage.")
     }
     guard succeeded else {
       throw Error.responseError(json["error"] as? String ?? "Command failed.")
@@ -62,7 +62,7 @@ nonisolated enum SocketClient {
         if bytesRead < 0 {
           let err = errno
           guard err != EAGAIN, err != EWOULDBLOCK else {
-            throw Error.responseError("Timed out waiting for response from Supacode.")
+            throw Error.responseError("Timed out waiting for response from Kage.")
           }
           guard err == EINTR else {
             throw Error.readFailed(errno: err)

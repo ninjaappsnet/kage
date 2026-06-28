@@ -22,7 +22,7 @@ struct DeeplinkReferenceView: View {
         .foregroundStyle(.secondary)
       } header: {
         Text("Deeplink Reference").font(.title.bold())
-        Text("Use the \(code("supacode://")) URL scheme to control Supacode from the terminal, scripts, or other apps.")
+        Text("Use the \(code("supacode://")) URL scheme to control Kage from the terminal, scripts, or other apps.")
       }
 
       DeeplinkSection(title: "General", rows: Self.generalRows)

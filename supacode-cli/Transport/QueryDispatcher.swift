@@ -1,6 +1,6 @@
 import Foundation
 
-/// Sends a query to the running Supacode app via socket, parses the response, and returns the data array.
+/// Sends a query to the running Kage app via socket, parses the response, and returns the data array.
 nonisolated enum QueryDispatcher {
   static func query(resource: String, params: [String: String] = [:]) throws -> [[String: String]] {
     let socketPath = try Dispatcher.resolveSocket()
@@ -9,10 +9,10 @@ nonisolated enum QueryDispatcher {
     let data = try JSONSerialization.data(withJSONObject: json)
     let response = try SocketClient.sendAndReceiveData(to: socketPath, data: data)
     guard !response.isEmpty else {
-      throw SocketClient.Error.responseError("Empty response from Supacode.")
+      throw SocketClient.Error.responseError("Empty response from Kage.")
     }
     guard let parsed = try? JSONSerialization.jsonObject(with: response) as? [String: Any] else {
-      throw SocketClient.Error.responseError("Malformed response from Supacode.")
+      throw SocketClient.Error.responseError("Malformed response from Kage.")
     }
     guard let succeeded = parsed["ok"] as? Bool, succeeded else {
       let errorMsg = parsed["error"] as? String

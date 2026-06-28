@@ -1,6 +1,6 @@
 import Foundation
 
-/// Dispatches a deeplink URL to the running Supacode app via its Unix domain socket.
+/// Dispatches a deeplink URL to the running Kage app via its Unix domain socket.
 /// Launches the app and waits for the socket if not already running.
 nonisolated enum Dispatcher {
   /// Sends a deeplink URL to the app via socket.
@@ -13,7 +13,7 @@ nonisolated enum Dispatcher {
 
   /// Returns the socket path, launching the app and waiting if needed.
   static func resolveSocket() throws -> String {
-    // Inside a Supacode terminal — use the env var if the socket is still alive.
+    // Inside a Kage terminal — use the env var if the socket is still alive.
     if let envPath = SocketDiscovery.fromEnvironment(), SocketDiscovery.isAlive(envPath) {
       return envPath
     }
@@ -25,7 +25,7 @@ nonisolated enum Dispatcher {
     }
     if existing.count > 1 {
       throw SocketClient.Error.responseError(
-        "Multiple Supacode instances found. Run inside a Supacode terminal or specify SUPACODE_SOCKET_PATH.\n"
+        "Multiple Kage instances found. Run inside a Kage terminal or specify SUPACODE_SOCKET_PATH.\n"
           + existing.joined(separator: "\n")
       )
     }
@@ -33,7 +33,7 @@ nonisolated enum Dispatcher {
     // No socket found — launch the app and wait for it.
     try launchApp()
     guard let path = try waitForSocket(timeout: 10.0) else {
-      throw SocketClient.Error.responseError("Timed out waiting for Supacode to start.")
+      throw SocketClient.Error.responseError("Timed out waiting for Kage to start.")
     }
     return path
   }
@@ -41,7 +41,7 @@ nonisolated enum Dispatcher {
   private static func launchApp() throws {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    process.arguments = ["-a", "Supacode"]
+    process.arguments = ["-a", "Kage"]
     let stderrPipe = Pipe()
     process.standardError = stderrPipe
     try process.run()
@@ -49,14 +49,14 @@ nonisolated enum Dispatcher {
     guard process.terminationStatus == 0 else {
       let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
       let detail = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      let message = detail.isEmpty ? "Failed to launch Supacode (exit \(process.terminationStatus))." : detail
+      let message = detail.isEmpty ? "Failed to launch Kage (exit \(process.terminationStatus))." : detail
       throw SocketClient.Error.responseError(message)
     }
   }
 
   private static func waitForSocket(timeout: TimeInterval) throws -> String? {
     let deadline = Date().addingTimeInterval(timeout)
-    FileHandle.standardError.write(Data("Waiting for Supacode to start...\n".utf8))
+    FileHandle.standardError.write(Data("Waiting for Kage to start...\n".utf8))
     var lastError: Swift.Error?
     while Date() < deadline {
       do {

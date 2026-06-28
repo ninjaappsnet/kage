@@ -10,7 +10,7 @@ make format                      # Run swift-format only
 make lint                        # Run swiftlint only (fix + lint)
 make check                       # Run both format and lint
 make test                        # Run all tests
-make log-stream                  # Stream app logs (subsystem: app.supabit.supacode)
+make log-stream                  # Stream app logs (subsystem: net.ninjaapps.kage)
 make bump-version                # Bump patch version and create git tag
 make bump-and-release            # Bump version and push to trigger release
 ```

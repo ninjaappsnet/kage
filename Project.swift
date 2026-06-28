@@ -19,7 +19,6 @@ let ghosttyFingerprintInputScript = """
 """
 
 let appResources: ResourceFileElements = [
-  "supacode/AppIcon.icon",
   "supacode/Assets.xcassets",
   "supacode/notification.wav",
 ]
@@ -102,6 +101,7 @@ let project = Project(
     base: [
       "CLANG_ENABLE_MODULES": "YES",
       "CODE_SIGN_STYLE": "Automatic",
+      "DEVELOPMENT_TEAM": "745BCAQCQ4",
       "ENABLE_USER_SCRIPT_SANDBOXING": "NO",
       "SWIFT_APPROACHABLE_CONCURRENCY": "YES",
       "SWIFT_DEFAULT_ACTOR_ISOLATION": "MainActor",
@@ -119,7 +119,7 @@ let project = Project(
       name: "supacode-cli",
       destinations: .macOS,
       product: .commandLineTool,
-      bundleId: "app.supabit.supacode.cli",
+      bundleId: "net.ninjaapps.kage.cli",
       deploymentTargets: .macOS("26.0"),
       infoPlist: .default,
       buildableFolders: [
@@ -157,7 +157,7 @@ let project = Project(
       name: "SupacodeSettingsShared",
       destinations: .macOS,
       product: .staticFramework,
-      bundleId: "app.supabit.supacode.settings-shared",
+      bundleId: "net.ninjaapps.kage.settings-shared",
       deploymentTargets: .macOS("26.0"),
       infoPlist: .default,
       buildableFolders: [
@@ -180,7 +180,7 @@ let project = Project(
       name: "SupacodeSettingsFeature",
       destinations: .macOS,
       product: .staticFramework,
-      bundleId: "app.supabit.supacode.settings-feature",
+      bundleId: "net.ninjaapps.kage.settings-feature",
       deploymentTargets: .macOS("26.0"),
       infoPlist: .default,
       buildableFolders: [
@@ -203,7 +203,7 @@ let project = Project(
       name: "supacode",
       destinations: .macOS,
       product: .app,
-      bundleId: "app.supabit.supacode",
+      bundleId: "net.ninjaapps.kage",
       deploymentTargets: .macOS("26.0"),
       infoPlist: .file(path: "supacode/Info.plist"),
       resources: appResources,
@@ -238,6 +238,8 @@ let project = Project(
       settings: .settings(
         base: [
           "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
+          "PRODUCT_NAME": "Kage",
+          "PRODUCT_MODULE_NAME": "supacode",
           "ENABLE_HARDENED_RUNTIME": "YES",
           "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/../Frameworks",
           "OTHER_LDFLAGS": "$(inherited) -lc++",
@@ -255,7 +257,7 @@ let project = Project(
       name: "supacodeTests",
       destinations: .macOS,
       product: .unitTests,
-      bundleId: "app.supabit.supacodeTests",
+      bundleId: "net.ninjaapps.kage.tests",
       deploymentTargets: .macOS("26.1"),
       infoPlist: .default,
       buildableFolders: [
@@ -265,7 +267,7 @@ let project = Project(
       settings: .settings(
         base: [
           "BUNDLE_LOADER": "$(TEST_HOST)",
-          "TEST_HOST": "$(BUILT_PRODUCTS_DIR)/supacode.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/supacode",
+          "TEST_HOST": "$(BUILT_PRODUCTS_DIR)/Kage.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Kage",
         ],
         defaultSettings: .essential
       )

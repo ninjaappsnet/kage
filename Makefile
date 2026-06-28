@@ -155,7 +155,7 @@ lint: # Lint code with swiftlint
 check: format lint # Format and lint
 
 log-stream: # Stream logs from the app via log stream
-	log stream --predicate 'subsystem == "app.supabit.supacode"' --style compact --color always
+	log stream --predicate 'subsystem == "net.ninjaapps.kage"' --style compact --color always
 
 bump-version: # Bump app version (usage: make bump-version VERSION=x.y.z [BUILD=123] [TITLE=… BODY=…])
 	@./scripts/bump-version.sh
