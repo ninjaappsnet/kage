@@ -3,7 +3,7 @@
   "copyIgnoredOnWorktreeCreate" : true,
   "copyUntrackedOnWorktreeCreate" : true,
   "deleteScript" : "",
-  "openActionID" : "xcode",
+  "openActionID" : "terminal",
   "pullRequestMergeStrategy" : "merge",
   "runScript" : "make run-app",
   "scripts" : [
