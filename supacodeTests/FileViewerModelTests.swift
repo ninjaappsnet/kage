@@ -124,6 +124,29 @@ struct FileViewerModelTests {
     #expect(!model.shouldHighlightSyntax)
   }
 
+  @Test func imageFileOpensAsMediaAndIsNotEditable() throws {
+    // Classification is by extension; the bytes need not be a real image here.
+    let url = try Self.makeTempFile(name: "pic.png", contents: Data([0x89, 0x50, 0x4E, 0x47]))
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+    let model = FileViewerModel()
+    model.open(url)
+    #expect(model.loadState == .media(.image))
+    #expect(!model.isEditable)
+    #expect(!model.isDirty)
+    #expect(model.hasFile)
+  }
+
+  @Test func pdfFileOpensAsMedia() throws {
+    let url = try Self.makeTempFile(name: "doc.pdf", contents: Data("%PDF-1.4".utf8))
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+    let model = FileViewerModel()
+    model.open(url)
+    #expect(model.loadState == .media(.pdf))
+    #expect(!model.isEditable)
+  }
+
   @Test func smallFileEnablesHighlighting() throws {
     let url = try Self.makeTempFile(name: "small.swift", contents: Data("let x = 1".utf8))
     defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

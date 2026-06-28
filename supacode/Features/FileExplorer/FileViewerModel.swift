@@ -17,6 +17,7 @@ final class FileViewerModel {
   enum LoadState: Equatable {
     case empty
     case loaded
+    case media(FileViewerFileType.MediaKind)
     case binary
     case tooLarge(Int)
     case unreadable(String)
@@ -51,6 +52,9 @@ final class FileViewerModel {
 
   var hasFile: Bool { fileURL != nil }
 
+  /// Only text files are editable; media/binary/oversized previews are not.
+  var isEditable: Bool { loadState == .loaded }
+
   var isDirty: Bool { loadState == .loaded && text != savedText }
 
   /// Highlighting is skipped for large files to avoid per-keystroke jank; they
@@ -76,6 +80,11 @@ final class FileViewerModel {
       let attributes = try FileManager.default.attributesOfItem(atPath: standardized.path(percentEncoded: false))
       diskModificationDate = attributes[.modificationDate] as? Date
       let size = (attributes[.size] as? Int) ?? 0
+      // Media (images / PDF) is previewed from the URL, not loaded as text.
+      if let kind = FileViewerFileType.mediaKind(for: standardized) {
+        reset(to: size > FileViewerFileType.maxMediaBytes ? .tooLarge(size) : .media(kind))
+        return
+      }
       if size > FileViewerFileType.maxEditableBytes {
         reset(to: .tooLarge(size))
         return

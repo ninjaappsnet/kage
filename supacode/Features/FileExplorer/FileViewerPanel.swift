@@ -70,9 +70,17 @@ struct FileViewerPanel: View {
     }
   }
 
+  private var headerIcon: String {
+    switch model.loadState {
+    case .media(.image): return "photo"
+    case .media(.pdf): return "doc.richtext"
+    default: return model.isMarkdown ? "doc.richtext" : "doc.text"
+    }
+  }
+
   private var header: some View {
     HStack(spacing: 6) {
-      Image(systemName: model.isMarkdown ? "doc.richtext" : "doc.text")
+      Image(systemName: headerIcon)
         .foregroundStyle(.tint)
         .imageScale(.small)
         .accessibilityHidden(true)
@@ -98,16 +106,18 @@ struct FileViewerPanel: View {
         .fixedSize()
         .help("Toggle rendered markdown and editable source")
       }
-      Button {
-        model.save()
-      } label: {
-        Image(systemName: "square.and.arrow.down")
-          .accessibilityLabel("Save")
+      if model.isEditable {
+        Button {
+          model.save()
+        } label: {
+          Image(systemName: "square.and.arrow.down")
+            .accessibilityLabel("Save")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut("s", modifiers: .command)
+        .disabled(!model.isDirty)
+        .help("Save (⌘S)")
       }
-      .buttonStyle(.borderless)
-      .keyboardShortcut("s", modifiers: .command)
-      .disabled(!model.isDirty)
-      .help("Save (⌘S)")
       Button {
         model.reloadFromDisk()
       } label: {
@@ -175,6 +185,10 @@ struct FileViewerPanel: View {
           highlightSyntax: model.shouldHighlightSyntax
         )
         .id(model.fileURL)
+      }
+    case .media(let kind):
+      if let url = model.fileURL {
+        MediaPreview(url: url, kind: kind)
       }
     case .binary:
       unsupported("Can't preview a binary file", systemImage: "doc.questionmark")

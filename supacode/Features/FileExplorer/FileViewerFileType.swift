@@ -13,6 +13,27 @@ enum FileViewerFileType {
   /// stays editable as plain monospaced text.
   static let maxHighlightBytes = 256 * 1024
 
+  /// Media files are previewed (not loaded as text), so they get a larger cap.
+  static let maxMediaBytes = 50 * 1024 * 1024
+
+  /// A previewable, non-text media file.
+  enum MediaKind: Equatable { case image, pdf }
+
+  /// Image extensions `NSImage` decodes reliably. SVG is intentionally excluded —
+  /// it's XML, so it opens as editable source instead.
+  private static let imageExtensions: Set<String> = [
+    "png", "jpg", "jpeg", "gif", "heic", "heif", "webp", "tiff", "tif", "bmp", "icns", "ico",
+  ]
+
+  /// Classifies `url` as previewable media, or `nil` for everything else (which
+  /// is then handled as text/binary).
+  static func mediaKind(for url: URL) -> MediaKind? {
+    let ext = url.pathExtension.lowercased()
+    if ext == "pdf" { return .pdf }
+    if imageExtensions.contains(ext) { return .image }
+    return nil
+  }
+
   /// How many leading bytes to inspect when sniffing binary content.
   private static let binarySniffByteCount = 8192
 

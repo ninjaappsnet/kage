@@ -47,6 +47,16 @@ struct FileViewerFileTypeTests {
     #expect(!FileViewerFileType.isMarkdown(url: URL(filePath: "/r/run.sh"), sample: "#!/bin/bash\n# go\necho hi"))
   }
 
+  @Test func mediaKindClassification() {
+    #expect(FileViewerFileType.mediaKind(for: URL(filePath: "/r/pic.png")) == .image)
+    #expect(FileViewerFileType.mediaKind(for: URL(filePath: "/r/photo.JPG")) == .image)
+    #expect(FileViewerFileType.mediaKind(for: URL(filePath: "/r/anim.gif")) == .image)
+    #expect(FileViewerFileType.mediaKind(for: URL(filePath: "/r/doc.pdf")) == .pdf)
+    // SVG is XML — handled as editable text, not media.
+    #expect(FileViewerFileType.mediaKind(for: URL(filePath: "/r/icon.svg")) == nil)
+    #expect(FileViewerFileType.mediaKind(for: URL(filePath: "/r/main.swift")) == nil)
+  }
+
   @Test func highlightrLanguageMapping() {
     #expect(FileViewerFileType.highlightrLanguage(for: URL(filePath: "/r/a.swift")) == "swift")
     #expect(FileViewerFileType.highlightrLanguage(for: URL(filePath: "/r/a.tsx")) == "typescript")
