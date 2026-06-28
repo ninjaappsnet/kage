@@ -543,6 +543,20 @@ final class WorktreeTerminalState {
   /// O(1) emptiness check that skips the split-tree walk in `allSurfaceIDs`.
   var hasAnySurface: Bool { !surfaces.isEmpty }
 
+  /// Working directory of the surface that currently has focus in the selected
+  /// tab, as reported by the shell over OSC 7. `nil` until a shell reports a pwd
+  /// or when no surface is focused. The file explorer reads this so it follows
+  /// the terminal's `cd`s. Reading `bridge.state.pwd` (an `@Observable`) here
+  /// lets SwiftUI re-render the explorer when the pwd changes.
+  var focusedSurfacePwd: URL? {
+    guard let tabId = tabManager.selectedTabId,
+      let focusedId = focusedSurfaceIdByTab[tabId],
+      let pwd = surfaces[focusedId]?.bridge.state.pwd,
+      !pwd.isEmpty
+    else { return nil }
+    return URL(filePath: pwd, directoryHint: .isDirectory).standardizedFileURL
+  }
+
   func hasSurface(_ surfaceID: UUID, in tabId: TerminalTabID) -> Bool {
     guard let tree = trees[tabId] else { return false }
     return tree.find(id: surfaceID) != nil

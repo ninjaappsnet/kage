@@ -4,11 +4,14 @@ import SupacodeSettingsShared
 import SwiftUI
 
 /// Left-docked file/folder explorer for the selected worktree, modeled on Warp's
-/// project panel. Lists the worktree working directory as an expandable tree,
-/// opens files / reveals in Finder, and stays live via FSEvents. Width persists
-/// across launches; the panel owns its `FileExplorerModel`, so the parent gives
-/// it `.id(worktree.id)` to rebuild the tree when the selection changes.
+/// project panel. Lists the active terminal's working directory as an expandable
+/// tree, opens files / reveals in Finder, and stays live via FSEvents. The root
+/// follows the terminal's pwd, so `cd`-ing in the terminal re-roots the tree.
+/// Width persists across launches; the panel owns its `FileExplorerModel`, so the
+/// parent gives it `.id(worktree.id)` to rebuild the tree when the selection
+/// changes, while `rootURL` changes within a worktree re-root in place.
 struct FileExplorerPanel: View {
+  private let rootURL: URL
   private let onClose: () -> Void
   @State private var model: FileExplorerModel
   @State private var width: CGFloat = 260
@@ -18,6 +21,7 @@ struct FileExplorerPanel: View {
   private static let maxWidth: CGFloat = 520
 
   init(rootURL: URL, onClose: @escaping () -> Void) {
+    self.rootURL = rootURL
     self.onClose = onClose
     _model = State(initialValue: FileExplorerModel(rootURL: rootURL))
   }
@@ -29,6 +33,9 @@ struct FileExplorerPanel: View {
       resizeHandle
     }
     .onAppear { width = Self.clamp(CGFloat(storedWidth)) }
+    .onChange(of: rootURL) { _, newRoot in
+      model.updateRoot(newRoot)
+    }
   }
 
   private var panelBody: some View {

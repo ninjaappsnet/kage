@@ -428,6 +428,15 @@ final class WorktreeTerminalManager {
     return stream
   }
 
+  /// pwd of the focused surface for a worktree, if its terminal state already
+  /// exists. Deliberately does NOT create state (unlike `state(for:)`) so a read
+  /// from a view body can't clobber setup-script gating. The file explorer reads
+  /// this to track `cd`s in the active terminal; `nil` before the terminal is
+  /// created or before the shell reports a pwd.
+  func focusedSurfacePwd(for worktreeID: Worktree.ID) -> URL? {
+    states[worktreeID]?.focusedSurfacePwd
+  }
+
   func state(
     for worktree: Worktree,
     runSetupScriptIfNew: () -> Bool = { false }

@@ -13,8 +13,9 @@ import Foundation
 @MainActor
 @Observable
 final class FileExplorerModel {
-  /// The worktree working directory this tree is rooted at.
-  let rootURL: URL
+  /// The directory this tree is rooted at. Follows the terminal's pwd, so it
+  /// changes as the user `cd`s; see `updateRoot(_:)`.
+  private(set) var rootURL: URL
 
   /// Flattened, depth-tagged visible rows. Only expanded branches contribute.
   private(set) var rows: [FileExplorerRow] = []
@@ -37,7 +38,21 @@ final class FileExplorerModel {
   private var watcher: FileSystemEventWatcher?
 
   init(rootURL: URL) {
-    self.rootURL = rootURL
+    self.rootURL = rootURL.standardizedFileURL
+    reload()
+    startWatching()
+  }
+
+  /// Re-root the tree at a new directory (the terminal `cd`'d into it). Expansion,
+  /// selection, and cached listings belong to the previous root, so they reset;
+  /// the FSEvents watcher restarts on the new directory.
+  func updateRoot(_ url: URL) {
+    let standardized = url.standardizedFileURL
+    guard standardized != rootURL else { return }
+    rootURL = standardized
+    expanded.removeAll()
+    childrenByDirectory.removeAll()
+    selectedURL = nil
     reload()
     startWatching()
   }

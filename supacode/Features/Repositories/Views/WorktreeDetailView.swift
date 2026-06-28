@@ -251,10 +251,15 @@ struct WorktreeDetailView: View {
         let shouldFocusTerminal = repositories.shouldFocusTerminal(for: selectedWorktree.id)
         HStack(spacing: 0) {
           // Local worktrees only: a remote worktree has no on-disk path to browse.
-          if isFileExplorerVisible, let explorerRoot = selectedWorktree.localWorkingDirectory {
-            FileExplorerPanel(rootURL: explorerRoot, onClose: toggleFileExplorer)
-              .id(selectedWorktree.id)
-              .transition(.move(edge: .leading).combined(with: .opacity))
+          // Root follows the active terminal's pwd (OSC 7) and falls back to the
+          // worktree dir until the shell reports one.
+          if isFileExplorerVisible, let fallbackRoot = selectedWorktree.localWorkingDirectory {
+            FileExplorerPanel(
+              rootURL: terminalManager.focusedSurfacePwd(for: selectedWorktree.id) ?? fallbackRoot,
+              onClose: toggleFileExplorer
+            )
+            .id(selectedWorktree.id)
+            .transition(.move(edge: .leading).combined(with: .opacity))
           }
           WorktreeTerminalTabsView(
             worktree: selectedWorktree,
