@@ -380,6 +380,15 @@ extension RepositoriesFeature.Action {
       .consumeTerminalFocus:
       return .sidebarStructure
 
+    // Workspace switch / membership changes which repositories are visible.
+    case .setActiveWorkspace, .assignRepositoryToWorkspace, .deleteWorkspace:
+      return .sidebarStructure
+
+    // Workspace metadata only — the switcher reads `@Shared(.sidebar)` directly,
+    // so create / rename don't need a structure recompute.
+    case .createWorkspace, .renameWorkspace:
+      return []
+
     // Bulk repository / worktree set changes that touch all caches.
     case .repositoriesLoaded, .openRepositoriesFinished,
       .repositoryRemovalCompleted, .repositoriesRemoved,
@@ -532,6 +541,21 @@ extension RepositoriesFeature.State {
   /// reducer (see `recomputeSidebarStructure(...)`); never call from a view
   /// body or the per-leaf reads here will observation-track every row at
   /// the parent and reintroduce the regression commit `0a1ed578` documents.
+  /// Repository ids visible under the active workspace filter, or `nil` when
+  /// no workspace is active ("All Projects" — every repo visible, today's
+  /// behavior). When a workspace is active, only repos whose section points at
+  /// it are visible; ungrouped repos are hidden until the user switches back to
+  /// "All". Feeds both the per-repo sections and the highlight hoists so a
+  /// pinned/active row from a hidden repo doesn't leak into the top sections.
+  func workspaceVisibleRepositoryIDs() -> Set<Repository.ID>? {
+    guard let activeWorkspaceID = sidebar.activeWorkspaceID else { return nil }
+    var visible: Set<Repository.ID> = []
+    for (repositoryID, section) in sidebar.sections where section.workspaceID == activeWorkspaceID {
+      visible.insert(repositoryID)
+    }
+    return visible
+  }
+
   func computeSidebarStructure(
     groupPinned: Bool,
     groupActive: Bool
@@ -548,8 +572,16 @@ extension RepositoriesFeature.State {
       )
     }
 
-    let hoists = computeHighlightHoists(groupPinned: groupPinned, groupActive: groupActive)
-    let repoSections = buildRepositorySections(hoisted: hoists.hoistedSet)
+    let visibleRepositoryIDs = workspaceVisibleRepositoryIDs()
+    let hoists = computeHighlightHoists(
+      groupPinned: groupPinned,
+      groupActive: groupActive,
+      visibleRepositoryIDs: visibleRepositoryIDs
+    )
+    let repoSections = buildRepositorySections(
+      hoisted: hoists.hoistedSet,
+      visibleRepositoryIDs: visibleRepositoryIDs
+    )
 
     var sections: [SidebarStructure.Section] = []
     if !hoists.pinned.isEmpty {
@@ -590,11 +622,23 @@ extension RepositoriesFeature.State {
     var hoistedSet: Set<Worktree.ID>
   }
 
-  private func computeHighlightHoists(groupPinned: Bool, groupActive: Bool) -> HighlightHoists {
+  private func computeHighlightHoists(
+    groupPinned: Bool,
+    groupActive: Bool,
+    visibleRepositoryIDs: Set<Repository.ID>?
+  ) -> HighlightHoists {
     let archived = archivedWorktreeIDSet
+    // When a workspace filter is active, a row only qualifies for the top
+    // Pinned / Active sections if its owning repository is visible — otherwise
+    // a hidden repo's pinned/active worktree would leak into the hoists.
+    func repositoryVisible(for worktreeID: Worktree.ID) -> Bool {
+      guard let visibleRepositoryIDs else { return true }
+      guard let repositoryID = sidebarItems[id: worktreeID]?.repositoryID else { return false }
+      return visibleRepositoryIDs.contains(repositoryID)
+    }
     let pinned: [Worktree.ID]
     if groupPinned {
-      let pinnedIDs = orderedHighlightPinnedIDs(archived: archived)
+      let pinnedIDs = orderedHighlightPinnedIDs(archived: archived).filter(repositoryVisible)
       pinned = orderedHighlightCandidates(forPinned: true, candidateIDs: pinnedIDs, excluding: [])
     } else {
       pinned = []
@@ -608,6 +652,8 @@ extension RepositoriesFeature.State {
         guard let item = sidebarItems[id: id] else { return false }
         // Terminating rows already signal their wind-down inline.
         guard !item.lifecycle.isTerminating else { return false }
+        // Hidden under the active workspace filter — keep it out of Active too.
+        guard repositoryVisible(for: id) else { return false }
         // Orphan rows have no working dir for the agent/script badge to act on.
         return !item.isMissing
       }
@@ -629,7 +675,10 @@ extension RepositoriesFeature.State {
     var reorderableRepositoryIDs: [Repository.ID]
   }
 
-  private func buildRepositorySections(hoisted: Set<Worktree.ID>) -> RepositorySectionsBuild {
+  private func buildRepositorySections(
+    hoisted: Set<Worktree.ID>,
+    visibleRepositoryIDs: Set<Repository.ID>?
+  ) -> RepositorySectionsBuild {
     var sections: [SidebarStructure.Section] = []
     var reorderableRepositoryIDs: [Repository.ID] = []
     let pendingIDsByRepo: [Repository.ID: Set<Worktree.ID>] = Dictionary(
@@ -652,6 +701,12 @@ extension RepositoriesFeature.State {
     // with no rendered section, e.g. a still-loading root or a hoisted folder)
     // so the offset-based `.repositoriesMoved` move maps cleanly back.
     for repositoryID in orderedRepositoryIDs() {
+      // Workspace filter: skip repositories that aren't members of the active
+      // workspace. `reorderableRepositoryIDs` mirrors the rendered set so the
+      // drag-offset translation stays consistent (repo reorder is gated off
+      // while a workspace filter is active, but the array must still line up
+      // with what's actually shown).
+      if let visibleRepositoryIDs, !visibleRepositoryIDs.contains(repositoryID) { continue }
       reorderableRepositoryIDs.append(repositoryID)
       let repository = repositories[id: repositoryID]
       let isRemote = repository?.host != nil

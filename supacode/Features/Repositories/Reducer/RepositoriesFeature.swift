@@ -394,6 +394,14 @@ struct RepositoriesFeature {
     case repositoriesRemoved([Repository.ID], selectionWasRemoved: Bool)
     case pinWorktree(Worktree.ID)
     case unpinWorktree(Worktree.ID)
+    // Sidebar workspaces: a named filter over repositories. Switching changes
+    // which repos the sidebar shows; assignment moves a repo into / out of a
+    // workspace (single membership). Handled in `sidebarWorkspaceReducer`.
+    case setActiveWorkspace(SidebarState.Workspace.ID?)
+    case createWorkspace(name: String)
+    case renameWorkspace(id: SidebarState.Workspace.ID, name: String)
+    case deleteWorkspace(id: SidebarState.Workspace.ID)
+    case assignRepositoryToWorkspace(repositoryID: Repository.ID, workspaceID: SidebarState.Workspace.ID?)
     case presentAlert(title: String, message: String)
     case worktreeInfoEvent(WorktreeInfoWatcherClient.Event)
     case worktreeNotificationReceived(Worktree.ID)
@@ -2605,6 +2613,56 @@ struct RepositoriesFeature {
     }
   }
 
+  /// Sidebar workspace handlers (create / rename / delete / switch / assign),
+  /// split from `body` so its `Reduce` closure stays under the type-checker's
+  /// complexity limit. Every arm mutates the persisted `@Shared(.sidebar)`
+  /// through `withLock`, which auto-saves; the post-reduce hook recomputes the
+  /// structure for the arms that change repository visibility (see
+  /// `Action.cacheInvalidations`).
+  var sidebarWorkspaceReducer: some Reducer<State, Action> {
+    Reduce { state, action in
+      @Dependency(\.uuid) var uuid
+      switch action {
+      case .setActiveWorkspace(let workspaceID):
+        // Guard against a stale id (e.g. a workspace deleted in another
+        // window): an unknown non-nil id falls back to "All".
+        let resolved = workspaceID.flatMap { state.sidebar.workspaces[$0] != nil ? $0 : nil }
+        state.$sidebar.withLock { $0.activeWorkspaceID = resolved }
+        return .none
+
+      case .createWorkspace(let name):
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .none }
+        analyticsClient.capture("workspace_created", nil)
+        state.$sidebar.withLock { $0.addWorkspace(.init(id: uuid().uuidString, name: trimmed)) }
+        return .none
+
+      case .renameWorkspace(let id, let name):
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .none }
+        state.$sidebar.withLock { $0.renameWorkspace(id, to: trimmed) }
+        return .none
+
+      case .deleteWorkspace(let id):
+        analyticsClient.capture("workspace_deleted", nil)
+        // Drops the workspace, reverts its members to ungrouped, and resets the
+        // active filter to "All" when it pointed at the deleted workspace.
+        state.$sidebar.withLock { $0.removeWorkspace(id) }
+        return .none
+
+      case .assignRepositoryToWorkspace(let repositoryID, let workspaceID):
+        // Reject an unknown target id so a stale menu binding can't strand a
+        // repo on a dead workspace; `nil` (Remove from Workspace) always valid.
+        if let workspaceID, state.sidebar.workspaces[workspaceID] == nil { return .none }
+        state.$sidebar.withLock { $0.setWorkspace(workspaceID, for: repositoryID) }
+        return .none
+
+      default:
+        return .none
+      }
+    }
+  }
+
   /// Pin / unpin / toast / notification / worktree-info-event handlers, split from `body` to keep
   /// its `Reduce` closure under the type-checker's complexity limit.
   var worktreeNotificationReducer: some Reducer<State, Action> {
@@ -3761,6 +3819,11 @@ struct RepositoriesFeature {
         // under the type-checker's complexity limit.
         return .none
 
+      case .setActiveWorkspace, .createWorkspace, .renameWorkspace, .deleteWorkspace,
+        .assignRepositoryToWorkspace:
+        // Real handling lives in `sidebarWorkspaceReducer` (combined below).
+        return .none
+
       case .refreshGithubIntegrationAvailability, .githubIntegrationAvailabilityUpdated,
         .repositoryPullRequestRefreshCompleted, .worktreeBranchNameLoaded, .worktreeLineChangesLoaded,
         .repositoryPullRequestsLoaded, .pullRequestAction, .setGithubIntegrationEnabled, .setMergedWorktreeAction,
@@ -3932,6 +3995,7 @@ struct RepositoriesFeature {
     worktreeRemovalReducer
     worktreeCreateInRepoReducer
     worktreeNotificationReducer
+    sidebarWorkspaceReducer
     githubIntegrationReducer
     // Targeted post-reduce hook: only the actions that demonstrably touch
     // structure inputs trigger a recompute. The Equatable diff inside the

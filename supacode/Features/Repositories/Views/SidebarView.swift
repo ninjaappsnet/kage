@@ -36,6 +36,9 @@ struct SidebarView: View {
       store: store,
       terminalManager: terminalManager
     )
+    .safeAreaInset(edge: .top, spacing: 0) {
+      WorkspaceSwitcherView(store: store)
+    }
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
         Menu {

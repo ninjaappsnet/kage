@@ -128,6 +128,12 @@ struct SidebarListView: View {
     destination: Int,
     structure: SidebarStructure
   ) {
+    // Repository reorder maps flat offsets onto the full sidebar order. Under
+    // an active workspace filter only a subset of repos is rendered, so those
+    // offsets wouldn't map back cleanly — disable reorder while filtered;
+    // the user reorders under "All Projects". (Membership still changes via
+    // the per-repo "Move to Workspace" menu.)
+    guard store.state.sidebar.activeWorkspaceID == nil else { return }
     let repoIDs = structure.reorderableRepositoryIDs
     guard !repoIDs.isEmpty else { return }
     let sourceFlat = offsets.sorted()
@@ -394,6 +400,9 @@ private struct SidebarSectionActionsView: View {
         }
         .help("Repository Settings")
       }
+      Divider()
+      WorkspaceAssignmentMenu(repositoryID: repositoryID, store: store)
+        .disabled(isRemovingRepository)
       Divider()
       Button(
         isRemote ? "Remove Remote Repository…" : "Remove Repository…",

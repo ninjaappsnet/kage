@@ -25,6 +25,15 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
   var schemaVersion: Int
   var sections: OrderedDictionary<Repository.ID, Section>
   var focusedWorktreeID: Worktree.ID?
+  /// User-created workspaces keyed by stable id; insertion order is the
+  /// display order in the switcher. A repository belongs to at most one
+  /// workspace (`Section.workspaceID`). Empty for users who never made one,
+  /// which keeps the sidebar in its ungrouped default — see
+  /// "Minimizing Upstream Merge Conflicts" / workspaces feature.
+  var workspaces: OrderedDictionary<Workspace.ID, Workspace>
+  /// The workspace whose member repositories the sidebar is currently
+  /// filtered to. `nil` means "All Projects" — no filter, today's behavior.
+  var activeWorkspaceID: Workspace.ID?
 
   /// Memberwise initializer. `schemaVersion` defaults to `0`, meaning
   /// "not migrated yet, or migrator failed". The boot-time migrator
@@ -34,17 +43,23 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
   init(
     schemaVersion: Int = 0,
     sections: OrderedDictionary<Repository.ID, Section> = [:],
-    focusedWorktreeID: Worktree.ID? = nil
+    focusedWorktreeID: Worktree.ID? = nil,
+    workspaces: OrderedDictionary<Workspace.ID, Workspace> = [:],
+    activeWorkspaceID: Workspace.ID? = nil
   ) {
     self.schemaVersion = schemaVersion
     self.sections = sections
     self.focusedWorktreeID = focusedWorktreeID
+    self.workspaces = workspaces
+    self.activeWorkspaceID = activeWorkspaceID
   }
 
   private enum CodingKeys: String, CodingKey {
     case schemaVersion
     case sections
     case focusedWorktreeID
+    case workspaces
+    case activeWorkspaceID
   }
 
   init(from decoder: any Decoder) throws {
@@ -59,6 +74,15 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
         forKey: .sections
       ) ?? [:]
     self.focusedWorktreeID = try container.decodeIfPresent(Worktree.ID.self, forKey: .focusedWorktreeID)
+    // Workspaces are additive: a file written before the feature shipped has
+    // neither key, so both default to empty / nil and the sidebar renders
+    // ungrouped exactly as before. No schema bump or migration needed.
+    self.workspaces =
+      try container.decodeIfPresent(
+        OrderedDictionary<Workspace.ID, Workspace>.self,
+        forKey: .workspaces
+      ) ?? [:]
+    self.activeWorkspaceID = try container.decodeIfPresent(Workspace.ID.self, forKey: .activeWorkspaceID)
   }
 
   func encode(to encoder: any Encoder) throws {
@@ -69,6 +93,21 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
     try container.encode(schemaVersion, forKey: .schemaVersion)
     try container.encode(sections, forKey: .sections)
     try container.encodeIfPresent(focusedWorktreeID, forKey: .focusedWorktreeID)
+    // Omit when empty / unset so `sidebar.json` stays clean for users who
+    // never created a workspace.
+    if !workspaces.isEmpty {
+      try container.encode(workspaces, forKey: .workspaces)
+    }
+    try container.encodeIfPresent(activeWorkspaceID, forKey: .activeWorkspaceID)
+  }
+
+  /// User-created sidebar workspace: a named filter over repositories. A
+  /// repository's membership is stored as a back-pointer on its `Section`
+  /// (`workspaceID`), so the repo's position keeps living in the single
+  /// `sections` ordering — the workspace itself only carries metadata.
+  nonisolated struct Workspace: Equatable, Sendable, Codable, Identifiable {
+    var id: String
+    var name: String
   }
 
   nonisolated enum BucketID: String, Codable, Hashable, Sendable {
@@ -87,17 +126,23 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
     /// Optional user-supplied tint applied to the sidebar header.
     /// `nil` means "default / no tint".
     var color: RepositoryColor?
+    /// Id of the user-created workspace this repository belongs to, or `nil`
+    /// when ungrouped (visible only under "All Projects"). At most one
+    /// workspace per repository — single membership.
+    var workspaceID: Workspace.ID?
 
     init(
       collapsed: Bool = false,
       buckets: OrderedDictionary<BucketID, Bucket> = [:],
       title: String? = nil,
-      color: RepositoryColor? = nil
+      color: RepositoryColor? = nil,
+      workspaceID: Workspace.ID? = nil
     ) {
       self.collapsed = collapsed
       self.buckets = buckets
       self.title = title
       self.color = color
+      self.workspaceID = workspaceID
     }
 
     private enum SectionCodingKeys: String, CodingKey {
@@ -105,6 +150,7 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
       case buckets
       case title
       case color
+      case workspaceID
     }
 
     init(from decoder: any Decoder) throws {
@@ -120,6 +166,7 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
         ) ?? [:]
       self.title = try container.decodeIfPresent(String.self, forKey: .title)
       self.color = try container.decodeIfPresent(RepositoryColor.self, forKey: .color)
+      self.workspaceID = try container.decodeIfPresent(Workspace.ID.self, forKey: .workspaceID)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -132,6 +179,7 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
       // stays clean for repos the user never touched.
       try container.encodeIfPresent(title, forKey: .title)
       try container.encodeIfPresent(color, forKey: .color)
+      try container.encodeIfPresent(workspaceID, forKey: .workspaceID)
     }
   }
 
@@ -493,6 +541,40 @@ nonisolated extension SidebarState {
     bucket.items = rebuilt
     section.buckets[bucketID] = bucket
     sections[repositoryID] = section
+  }
+
+  // MARK: - Workspace mutations.
+
+  /// Add (or replace) a workspace definition. Insertion order in
+  /// `workspaces` is the switcher display order.
+  mutating func addWorkspace(_ workspace: Workspace) {
+    workspaces[workspace.id] = workspace
+  }
+
+  /// Rename an existing workspace. No-op when the id is unknown.
+  mutating func renameWorkspace(_ id: Workspace.ID, to name: String) {
+    workspaces[id]?.name = name
+  }
+
+  /// Remove a workspace: drop its metadata, clear membership on every
+  /// section that pointed at it (those repos fall back to ungrouped /
+  /// "All"), and reset the active filter to "All" when it was the one
+  /// being removed so the sidebar never strands on a dead filter.
+  mutating func removeWorkspace(_ id: Workspace.ID) {
+    workspaces.removeValue(forKey: id)
+    for repositoryID in sections.keys where sections[repositoryID]?.workspaceID == id {
+      sections[repositoryID]?.workspaceID = nil
+    }
+    if activeWorkspaceID == id {
+      activeWorkspaceID = nil
+    }
+  }
+
+  /// Assign `repositoryID` to `workspaceID` (or clear membership when
+  /// `nil`). Materializes the section so a repo that hasn't been curated
+  /// yet can still join a workspace.
+  mutating func setWorkspace(_ workspaceID: Workspace.ID?, for repositoryID: Repository.ID) {
+    sections[repositoryID, default: .init()].workspaceID = workspaceID
   }
 
   /// Shared insertion helper — clamps `position` to the current

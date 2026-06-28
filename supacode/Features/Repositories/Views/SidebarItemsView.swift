@@ -691,6 +691,10 @@ private struct SidebarItemContextMenu: View {
           }
           .help("Edit the SSH server, port, user, or path")
         }
+        // A folder is its own repository, so it can join a workspace. Git repos
+        // assign through the section-header ellipsis menu instead (per-worktree
+        // rows aren't workspace members).
+        WorkspaceAssignmentMenu(repositoryID: repositoryID, store: store)
         Divider()
       } else if let row = contextRows.first,
         !row.isMainWorktree,
