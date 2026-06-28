@@ -57,14 +57,8 @@
 	<string>A program running within Kage requires elevated privileges.</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
-	<key>PostHogAPIKey</key>
-	<string>$(POSTHOG_API_KEY)</string>
-	<key>PostHogHost</key>
-	<string>$(POSTHOG_HOST)</string>
-	<key>SentryDSN</key>
-	<string>$(SENTRY_DSN)</string>
 	<key>SUFeedURL</key>
-    <string>https://ninjaapps.net/kage/download/latest/appcast.xml</string>
+    <string>https://github.com/ninjaappsnet/kage/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>eBdTbl+6sR8gxO1zyzyvdQHuJrXMLxD31oCc+JoW5jo=</string>
 	<key>SUEnableAutomaticChecks</key>

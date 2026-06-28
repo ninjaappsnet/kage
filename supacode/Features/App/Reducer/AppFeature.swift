@@ -2,7 +2,6 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import OrderedCollections
-import PostHog
 import SupacodeSettingsFeature
 import SupacodeSettingsShared
 import SwiftUI

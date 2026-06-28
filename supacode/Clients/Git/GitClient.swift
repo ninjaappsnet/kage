@@ -1,5 +1,4 @@
 import Foundation
-import Sentry
 import SupacodeSettingsShared
 
 enum GitOperation: String {
@@ -1120,15 +1119,6 @@ nonisolated private func wrapShellError(
     gitError = .commandFailed(command: command, message: error.localizedDescription)
   }
   gitLogger.warning("git command failed operation=\(operation.rawValue) exit_code=\(exitCode)")
-  #if !DEBUG
-    SentrySDK.logger.error(
-      "git command failed",
-      attributes: [
-        "operation": operation.rawValue,
-        "exit_code": Int(exitCode),
-      ]
-    )
-  #endif
   return gitError
 }
 
