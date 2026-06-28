@@ -57,6 +57,12 @@ Tuist/Dependencies/
 
 Carthage/Build/
 
+# Release signing material — never commit (see RELEASE_SETUP.md)
+*.p12
+*.p8
+*.cer
+kage_sparkle_private*.txt
+
 # fastlane
 #
 # It is recommended to not store the screenshots in the git repo.
