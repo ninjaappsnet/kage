@@ -176,6 +176,51 @@ struct SidebarWorkspaceTests {
     #expect(store.state.sidebar.activeWorkspaceID == nil)
   }
 
+  @Test func addingRepositoryWhileWorkspaceActiveInheritsWorkspace() async {
+    var initial = makeState(repositories: [makeRepository(repoA)])
+    initial.$sidebar.withLock {
+      $0.addWorkspace(.init(id: "ws-1", name: "Work"))
+      $0.setWorkspace("ws-1", for: repoA)
+      $0.activeWorkspaceID = "ws-1"
+    }
+    let store = TestStore(initialState: initial) { RepositoriesFeature() }
+    store.exhaustivity = .off
+
+    let repoBRepository = makeRepository(repoB)
+    await store.send(
+      .openRepositoriesFinished(
+        [makeRepository(repoA), repoBRepository],
+        failures: [],
+        invalidRoots: [],
+        roots: [URL(fileURLWithPath: repoA.rawValue), repoBRepository.rootURL]
+      )
+    )
+
+    // The repo added while "Work" was the active filter joins it, instead of
+    // landing only under "All Projects". Existing membership is untouched.
+    #expect(store.state.sidebar.sections[repoB]?.workspaceID == "ws-1")
+    #expect(store.state.sidebar.sections[repoA]?.workspaceID == "ws-1")
+  }
+
+  @Test func addingRepositoryUnderAllProjectsStaysUngrouped() async {
+    let initial = makeState(repositories: [makeRepository(repoA)])
+    let store = TestStore(initialState: initial) { RepositoriesFeature() }
+    store.exhaustivity = .off
+
+    let repoBRepository = makeRepository(repoB)
+    await store.send(
+      .openRepositoriesFinished(
+        [makeRepository(repoA), repoBRepository],
+        failures: [],
+        invalidRoots: [],
+        roots: [URL(fileURLWithPath: repoA.rawValue), repoBRepository.rootURL]
+      )
+    )
+
+    // No active workspace filter → new repo stays ungrouped ("All Projects").
+    #expect(store.state.sidebar.sections[repoB]?.workspaceID == nil)
+  }
+
   // MARK: - Structure filtering
 
   @Test func activeWorkspaceHidesNonMemberRepositories() {

@@ -3210,6 +3210,10 @@ struct RepositoriesFeature {
         state.isRefreshingWorktrees = false
         let previousSelection = state.selectedWorktreeID
         let previousSelectedWorktree = state.worktree(for: previousSelection)
+        // Repos that already had a sidebar section before this add. Used below
+        // to scope the "inherit the active workspace" assignment to genuinely
+        // new repos, so an existing repo's membership is never rewritten.
+        let knownRepositoryIDs = Set(state.sidebar.sections.keys)
         let mergedRemote = Self.mergePersistedRemoteRepositories(into: repositories, existingState: state)
         _ = applyRepositories(
           mergedRemote.repositories,
@@ -3219,6 +3223,17 @@ struct RepositoriesFeature {
           animated: false
         )
         state.repositoryRoots = roots
+        // A repo added while a workspace filter is active should join that
+        // workspace; otherwise it vanishes from the user's current view and
+        // only shows under "All Projects". Scope to repos that didn't exist
+        // before this add (new sections seed with `workspaceID == nil`).
+        if let activeWorkspaceID = state.sidebar.activeWorkspaceID {
+          state.$sidebar.withLock { sidebar in
+            for repository in state.repositories where !knownRepositoryIDs.contains(repository.id) {
+              sidebar.setWorkspace(activeWorkspaceID, for: repository.id)
+            }
+          }
+        }
         state.isInitialLoadComplete = true
         state.resolvingRemoteRepositoryIDs = mergedRemote.resolvingIDs
         state.loadFailuresByID = Dictionary(
