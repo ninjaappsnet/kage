@@ -32,16 +32,18 @@ struct SidebarView: View {
       }
     let openRepo = AppShortcuts.openRepository.effective(from: settingsFile.global.shortcutOverrides)
 
-    return VStack(spacing: 0) {
-      // Above the List (not a `.safeAreaInset` over it) so the switcher sits on
-      // the sidebar column's own material instead of painting a mismatched one,
-      // and the list never scrolls under it.
+    return SidebarListView(
+      store: store,
+      terminalManager: terminalManager
+    )
+    // Mounted as a top inset (not a VStack sibling) so the List reserves the
+    // switcher's height: the sticky highlight section headers ("Active" /
+    // "Pinned") then anchor *below* the switcher. As a plain sibling the list's
+    // scroll content extends up under the switcher and the floating header pins
+    // over it. The switcher paints the sidebar material itself (see
+    // `SidebarMaterialBackground`) so rows scrolling beneath stay hidden.
+    .safeAreaInset(edge: .top, spacing: 0) {
       WorkspaceSwitcherView(store: store)
-      Divider()
-      SidebarListView(
-        store: store,
-        terminalManager: terminalManager
-      )
     }
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
