@@ -331,8 +331,8 @@ struct AgentHookCommandTests {
     #expect(!command.contains(#"[ -z "${SUPACODE_SOCKET_PATH:-}" ]"#))
   }
 
-  @Test func sessionStartComposesOSCPresenceForClaudeAndCodex() {
-    for agent in [SkillAgent.claude, .codex, .opencode] {
+  @Test func sessionStartComposesOSCPresenceForOSCAgents() {
+    for agent in [SkillAgent.claude, .codex, .grok, .opencode] {
       let command = AgentHookSettingsCommand.compositeCommand(
         events: [.sessionStart], forwardStdinAsNotification: false, agent: agent)
       #expect(command.contains("]3008;start=\(agent.rawValue);event=session_start"))

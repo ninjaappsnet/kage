@@ -6,7 +6,9 @@ struct OpenCommand: ParsableCommand {
     abstract: "Bring Kage to the front."
   )
 
+  @OptionGroup var timeoutOption: TimeoutOption
+
   func run() throws {
-    try Dispatcher.dispatch(deeplinkURL: DeeplinkURLBuilder.open())
+    try Dispatcher.dispatch(deeplinkURL: DeeplinkURLBuilder.open(), timeoutSeconds: timeoutOption.timeout)
   }
 }
