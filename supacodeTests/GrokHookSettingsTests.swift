@@ -27,9 +27,42 @@ struct GrokHookSettingsTests {
     #expect(commands.allSatisfy { $0.contains(AgentHookSettingsCommand.ownershipMarker) })
   }
 
+  @Test func everyHookForwardsSupacodeEnv() throws {
+    let groups = try GrokHookSettings.hooksByEvent()
+    let expected = AgentHookSettingsCommand.grokHookEnvPassthrough
+    // Walk every command-bearing hook (not compactMap on env) so a single
+    // missing env block fails rather than being silently dropped.
+    let hooks = groups.values.flatMap { group in
+      group.flatMap { entry in
+        entry.objectValue?["hooks"]?.arrayValue ?? []
+      }
+    }
+    #expect(!hooks.isEmpty)
+    for hook in hooks {
+      let hookObject = try #require(hook.objectValue)
+      #expect(hookObject["command"]?.stringValue != nil)
+      let env = try #require(hookObject["env"]?.objectValue)
+      #expect(expected.allSatisfy { key, value in env[key]?.stringValue == value })
+    }
+  }
+
   @Test func everyCommandTargetsGrokAgent() throws {
     let commands = try Self.commandStrings(from: try GrokHookSettings.hooksByEvent())
     #expect(commands.allSatisfy { $0.contains("start=grok;") })
+  }
+
+  @Test func everyCommandOnlyNamesForwardedOrLocalVariables() throws {
+    // Grok preflights `$VAR` / `${VAR}` as required env before spawn, so any name it
+    // does not forward no-ops the hook (`required env var(s) not set: ${PPID}`, the
+    // shell special that broke every managed presence hook). The parent pid comes
+    // from `ps` into the local `$__ppid` instead.
+    let commands = try Self.commandStrings(from: try GrokHookSettings.hooksByEvent())
+    #expect(!commands.isEmpty)
+    #expect(commands.allSatisfy { !ManagedHookCommandVariables.names(in: $0).isEmpty })
+    #expect(commands.allSatisfy { ManagedHookCommandVariables.unexpected(in: $0).isEmpty })
+    // The allowlist accepts any `__` local, so pin the two spellings that must agree.
+    #expect(commands.allSatisfy { $0.contains("ps -o ppid= -p $$") })
+    #expect(commands.allSatisfy { $0.contains("$__ppid") })
   }
 
   @Test func postToolUseFiresIdleNotBusy() throws {

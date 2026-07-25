@@ -44,10 +44,22 @@ struct DeveloperSettingsView: View {
           Text(
             "Re-installs hooks for any agent reporting an outdated integration when Supacode comes to the foreground.")
         }
-        .help("Silently re-applies the canonical hook layout to outdated agent integrations when Supacode activates.")
+      }
+      Section("Advanced") {
+        Picker(selection: $store.automatedActionPolicy.sending(\.setAutomatedActionPolicy)) {
+          ForEach(AutomatedActionPolicy.allCases, id: \.self) { policy in
+            Text(policy.displayName).tag(policy)
+          }
+        } label: {
+          Text("Allow dangerous actions")
+          Text(
+            "Skips the confirmation dialog when running commands or scripts, closing tabs or splits, "
+              + "and archiving or deleting worktrees.")
+        }
       }
     }
     .formStyle(.grouped)
+    .contentMargins(.trailing, 6, for: .scrollIndicators)
     .padding(.top, -20)
     .padding(.leading, -8)
     .padding(.trailing, -6)
@@ -183,7 +195,7 @@ extension SkillAgent {
     case .copilot: "Hooks in `~/.copilot/hooks/supacode.json` and skill in `~/.copilot/skills/`."
     case .grok: "Hooks in `~/.grok/hooks/supacode.json` and skill in `~/.grok/skills/`."
     case .hermes: "Plugin in `~/.hermes/plugins/` and skill in `~/.hermes/skills/`."
-    case .kimi: "Hooks in `~/.kimi/config.toml` and skill in `~/.kimi/skills/`. Hooks system is in Beta."
+    case .kimi: "Hooks in `~/.kimi-code/config.toml` and skill in `~/.kimi-code/skills/`. Hooks system is in Beta."
     case .kiro: "Hooks in `~/.kiro/agents/` and skill in `~/.kiro/skills/`."
     case .omp: "Extension in `~/.omp/agent/extensions/` and skill in `~/.omp/agent/skills/`."
     case .opencode: "Plugin in `~/.config/opencode/plugins/` and skill in `~/.config/opencode/skills/`."

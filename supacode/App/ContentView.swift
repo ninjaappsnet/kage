@@ -149,6 +149,22 @@ struct ContentView: View {
         terminalManager: terminalManager
       )
     )
+    .background(OpenActionIconWarmHost(store: store))
+  }
+}
+
+/// Confines the `installedOpenActions` read so a resolved availability sweep
+/// warms the icon cache off the main thread without invalidating ContentView.
+private struct OpenActionIconWarmHost: View {
+  let store: StoreOf<AppFeature>
+  @Environment(OpenActionIconStore.self) private var iconStore: OpenActionIconStore?
+
+  var body: some View {
+    let installed = store.installedOpenActions
+    return Color.clear
+      .task(id: installed) {
+        await iconStore?.warm(installed)
+      }
   }
 }
 
@@ -167,7 +183,8 @@ private struct CommandPaletteOverlayHost: View {
     let paletteStore = store.scope(state: \.commandPalette, action: \.commandPalette)
     return CommandPalettePanelHost(
       store: paletteStore,
-      items: CommandPaletteFeature.commandPaletteItems(
+      items: CommandPaletteFeature.items(
+        in: paletteStore.mode,
         from: repositoriesStore.state,
         ghosttyCommands: ghosttyShortcuts.commandPaletteEntries,
         scripts: store.allScripts,

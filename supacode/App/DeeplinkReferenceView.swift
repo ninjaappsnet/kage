@@ -17,7 +17,7 @@ struct DeeplinkReferenceView: View {
         .foregroundStyle(.secondary)
         Text(
           "Deeplinks that run commands or perform destructive actions require confirmation"
-            + " unless \"Allow Arbitrary Deeplink Actions\" is enabled in Settings."
+            + " unless \"Allow dangerous actions\" permits them in Developer settings."
         )
         .foregroundStyle(.secondary)
       } header: {
@@ -76,7 +76,11 @@ struct DeeplinkReferenceView: View {
     .init(
       url: "supacode://worktree/<worktree_id>/tab/new",
       description: "Create a new tab.",
-      params: "?input=<cmd>&id=<uuid>"
+      params: "?input=<cmd>&id=<uuid>&title=<title>"
+    ),
+    .init(
+      url: "supacode://worktree/<worktree_id>/tab/<tab_id>/rename?title=<title>",
+      description: "Set the persistent title override; an empty title clears it."
     ),
     .init(
       url: "supacode://worktree/<worktree_id>/tab/<tab_id>/destroy",

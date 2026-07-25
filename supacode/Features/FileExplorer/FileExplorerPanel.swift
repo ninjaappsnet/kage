@@ -16,6 +16,7 @@ struct FileExplorerPanel: View {
   @State private var model: FileExplorerModel
   @State private var width: CGFloat = 260
   @Shared(.appStorage("fileExplorerWidth")) private var storedWidth = 260.0
+  @Shared(.settingsFile) private var settingsFile
 
   private static let minWidth: CGFloat = 180
   private static let maxWidth: CGFloat = 520
@@ -82,7 +83,15 @@ struct FileExplorerPanel: View {
           .accessibilityLabel("Close File Explorer")
       }
       .buttonStyle(.borderless)
-      .help("Close File Explorer (\(WorktreeDetailView.resolveShortcutDisplay(for: AppShortcuts.toggleFileExplorer)))")
+      .help(
+        """
+        Close File Explorer \
+        (\(WorktreeDetailView.resolveShortcutDisplay(
+          for: AppShortcuts.toggleFileExplorer,
+          overrides: settingsFile.global.shortcutOverrides
+        )))
+        """
+      )
     }
     .imageScale(.medium)
     .padding(.horizontal, 10)

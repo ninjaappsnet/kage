@@ -21,7 +21,6 @@ struct SidebarListView: View {
   var body: some View {
     let state = store.state
     let structure = state.sidebarStructure
-    let selectedWorktreeIDs = state.sidebarSelectedWorktreeIDs
     let currentSelections = state.sidebarSelections
     let selection = Binding<Set<SidebarSelection>>(
       get: { currentSelections },
@@ -52,7 +51,6 @@ struct SidebarListView: View {
             section: section,
             structure: structure,
             shortcutHintByID: shortcutHintByID,
-            selectedWorktreeIDs: selectedWorktreeIDs,
             store: store,
             terminalManager: terminalManager
           )
@@ -200,7 +198,6 @@ private struct SidebarSectionDispatcher: View {
   let section: SidebarStructure.Section
   let structure: SidebarStructure
   let shortcutHintByID: [Worktree.ID: String]
-  let selectedWorktreeIDs: Set<Worktree.ID>
   @Bindable var store: StoreOf<RepositoriesFeature>
   let terminalManager: WorktreeTerminalManager
 
@@ -215,7 +212,6 @@ private struct SidebarSectionDispatcher: View {
         rowIDs: rowIDs,
         store: store,
         terminalManager: terminalManager,
-        selectedWorktreeIDs: selectedWorktreeIDs,
         repositoryHighlightByID: structure.repositoryHighlightByID,
         shortcutHintByID: shortcutHintByID
       )
@@ -246,7 +242,6 @@ private struct SidebarSectionDispatcher: View {
             repository: repository,
             rowID: rowID,
             shortcutHint: shortcutHintByID[rowID],
-            selectedWorktreeIDs: selectedWorktreeIDs,
             store: store,
             terminalManager: terminalManager
           )
@@ -261,7 +256,6 @@ private struct SidebarSectionDispatcher: View {
           groups: groups,
           hoistSummary: structure.hoistSummaryByRepositoryID[repositoryID],
           shortcutHintByID: shortcutHintByID,
-          selectedWorktreeIDs: selectedWorktreeIDs,
           store: store,
           terminalManager: terminalManager
         )
@@ -277,7 +271,6 @@ private struct SidebarGitRepositorySection: View {
   /// highlight sections; rendered as a muted summary line under the rows.
   let hoistSummary: SidebarHoistSummary?
   let shortcutHintByID: [Worktree.ID: String]
-  let selectedWorktreeIDs: Set<Worktree.ID>
   @Bindable var store: StoreOf<RepositoriesFeature>
   let terminalManager: WorktreeTerminalManager
   var body: some View {
@@ -289,7 +282,6 @@ private struct SidebarGitRepositorySection: View {
         repository: repository,
         groups: groups,
         shortcutHintByID: shortcutHintByID,
-        selectedWorktreeIDs: selectedWorktreeIDs,
         store: store,
         terminalManager: terminalManager
       )

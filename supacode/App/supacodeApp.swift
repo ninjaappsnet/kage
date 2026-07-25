@@ -76,19 +76,27 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
     // the main window. Opt the singleton out per-process so a panel
     // left open from a previous session can't survive the relaunch.
     NSColorPanel.shared.isRestorable = false
-    appStore?.send(.appLaunched)
+    guard let appStore else {
+      SupaLogger("App").error("applicationDidFinishLaunching with no store; launch setup skipped.")
+      return
+    }
+    // Apply the saved Dock/menu-bar visibility before the first window shows.
+    NSApplication.shared.applyActivationPolicy(for: appStore.state.settings.appVisibility)
+    appStore.send(.appLaunched)
   }
 
   func applicationDidBecomeActive(_ notification: Notification) {
+    appStore?.send(.applicationDidBecomeActive)
     let app = NSApplication.shared
-    // Filter `NSPanel` out of the visibility check — the system
-    // color / font panels (and any sheet-attached child panels) are
-    // not "main windows" that should suppress surfacing.
     let hasVisibleMainWindow = app.windows.contains { window in
-      window.isVisible && !(window is NSPanel)
+      window.isVisible && window.isSurfaceableAppWindow
     }
     guard !hasVisibleMainWindow else { return }
     app.surfaceMainWindow()
+  }
+
+  func applicationDidResignActive(_ notification: Notification) {
+    appStore?.send(.applicationDidResignActive)
   }
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -121,6 +129,7 @@ struct SupacodeApp: App {
   @State private var terminalManager: WorktreeTerminalManager
   @State private var worktreeInfoWatcher: WorktreeInfoWatcherManager
   @State private var commandKeyObserver: CommandKeyObserver
+  @State private var openActionIcons = OpenActionIconStore()
   @State private var store: StoreOf<AppFeature>
 
   @MainActor init() {
@@ -237,6 +246,9 @@ struct SupacodeApp: App {
         tabExists: { worktreeID, tabID in
           terminalManager.tabExists(worktreeID: worktreeID, tabID: tabID)
         },
+        tabCanRename: { worktreeID, tabID in
+          terminalManager.tabCanRename(worktreeID: worktreeID, tabID: tabID)
+        },
         surfaceExists: { worktreeID, tabID, surfaceID in
           terminalManager.surfaceExists(worktreeID: worktreeID, tabID: tabID, surfaceID: surfaceID)
         },
@@ -260,6 +272,9 @@ struct SupacodeApp: App {
         },
         markNotificationRead: { worktreeID, notificationID in
           terminalManager.markNotificationRead(worktreeID: worktreeID, notificationID: notificationID)
+        },
+        markAllNotificationsRead: {
+          terminalManager.markAllNotificationsRead()
         },
         hasInflightBlockingScripts: {
           terminalManager.hasInflightBlockingScripts
@@ -337,22 +352,26 @@ struct SupacodeApp: App {
   ) {
     let repos = store.repositories.repositories
     let selectedWorktreeID = store.repositories.selectedWorktreeID
-    let pctSet = CharacterSet.urlPathAllowed.subtracting(.init(charactersIn: "/"))
 
     switch resource {
     case "repos":
       let data = repos.map {
-        ["id": $0.id.rawValue.addingPercentEncoding(withAllowedCharacters: pctSet) ?? $0.id.rawValue]
+        ["id": WorktreeStatusQueryResponse.encoded(id: $0.id.rawValue)]
       }
       AgentHookSocketServer.sendQueryResponse(clientFD: clientFD, data: data)
     case "worktrees":
-      let data = repos.flatMap { repo in
-        repo.worktrees.map { worktree in
-          let encodedID =
-            worktree.id.rawValue.addingPercentEncoding(withAllowedCharacters: pctSet) ?? worktree.id.rawValue
-          var entry = ["id": encodedID]
-          if worktree.id == selectedWorktreeID { entry["focused"] = "1" }
-          return entry
+      let repositories = store.repositories
+      let data = repos.flatMap { repository in
+        repository.worktrees.map { worktree in
+          WorktreeStatusQueryResponse.listFields(
+            worktreeID: worktree.id,
+            status: repositories.sidebar.status(
+              of: worktree.id,
+              in: repository.id,
+              isMain: repositories.isMainWorktree(worktree)
+            ),
+            isFocused: worktree.id == selectedWorktreeID
+          )
         }
       }
       AgentHookSocketServer.sendQueryResponse(clientFD: clientFD, data: data)
@@ -385,6 +404,8 @@ struct SupacodeApp: App {
         return
       }
       AgentHookSocketServer.sendQueryResponse(clientFD: clientFD, data: surfaces)
+    case "worktreeStatus":
+      handleWorktreeStatusQuery(params: params, repos: repos, clientFD: clientFD, store: store)
     case "worktreeAppearance":
       handleWorktreeAppearanceQuery(params: params, repos: repos, clientFD: clientFD, store: store)
     case "scripts":
@@ -393,6 +414,38 @@ struct SupacodeApp: App {
       AgentHookSocketServer.sendCommandResponse(
         clientFD: clientFD, ok: false, error: "Unknown resource: \(resource)")
     }
+  }
+
+  private static func handleWorktreeStatusQuery(
+    params: [String: String],
+    repos: IdentifiedArrayOf<Repository>,
+    clientFD: Int32,
+    store: StoreOf<AppFeature>
+  ) {
+    guard let worktreeID = params["worktreeID"] else {
+      AgentHookSocketServer.sendCommandResponse(
+        clientFD: clientFD, ok: false, error: "Missing worktreeID for status.")
+      return
+    }
+    guard let (repository, worktree) = resolveWorktree(worktreeID, in: repos) else {
+      AgentHookSocketServer.sendCommandResponse(
+        clientFD: clientFD, ok: false, error: "Worktree not found: \(worktreeID)")
+      return
+    }
+    let repositories = store.repositories
+    AgentHookSocketServer.sendQueryResponse(
+      clientFD: clientFD,
+      data: [
+        WorktreeStatusQueryResponse.statusFields(
+          status: repositories.sidebar.status(
+            of: worktree.id,
+            in: repository.id,
+            isMain: repositories.isMainWorktree(worktree)
+          ),
+          isFocused: worktree.id == repositories.selectedWorktreeID
+        )
+      ]
+    )
   }
 
   private static func handleWorktreeAppearanceQuery(
@@ -484,6 +537,7 @@ struct SupacodeApp: App {
         ContentView(store: store, terminalManager: terminalManager)
           .environment(ghosttyShortcuts)
           .environment(commandKeyObserver)
+          .environment(openActionIcons)
       }
       .openSettingsOnSelection(store: store)
       .openDeeplinkReferenceOnRequest(store: store)
@@ -491,6 +545,7 @@ struct SupacodeApp: App {
     .handlesExternalEvents(matching: [])
     .environment(ghosttyShortcuts)
     .environment(commandKeyObserver)
+    .environment(openActionIcons)
     .commands {
       WorktreeCommands(store: store)
       SidebarCommands()
@@ -500,8 +555,15 @@ struct SupacodeApp: App {
       }
       WindowCommands(ghosttyShortcuts: ghosttyShortcuts)
       CommandGroup(after: .textEditing) {
+        Button("Go to Worktree") {
+          guard NSApp.currentEvent?.isAutoRepeatKeyDown != true else { return }
+          store.send(.commandPalette(.togglePresentInMode(.worktreeSwitcher)))
+        }
+        .appKeyboardShortcut(AppShortcuts.worktreeSwitcher.effective(from: store.settings.shortcutOverrides))
+        .help("Switch between worktrees, sorted by most recently used")
         Button("Command Palette") {
-          store.send(.commandPalette(.togglePresented))
+          guard NSApp.currentEvent?.isAutoRepeatKeyDown != true else { return }
+          store.send(.commandPalette(.togglePresentInMode(.commands)))
         }
         .appKeyboardShortcut(AppShortcuts.commandPalette.effective(from: store.settings.shortcutOverrides))
         .help("Command Palette")
@@ -560,5 +622,26 @@ struct SupacodeApp: App {
     .windowToolbarStyle(.unified)
     .defaultSize(width: 720, height: 640)
     .restorationBehavior(.disabled)
+    MenuBarExtra(isInserted: menuBarInserted) {
+      MenuBarNotificationsMenu(store: store)
+    } label: {
+      MenuBarNotificationsLabel(unreadCount: store.notificationIndicatorCount)
+    }
+    // `.window`, not `.menu`: a native menu item can't host the sidebar row's
+    // dots, agent badges, and diff stats. The panel is styled to read like a menu.
+    .menuBarExtraStyle(.window)
+  }
+
+  /// Dragging the status item out of the menu bar falls back to `.dock`, so at
+  /// least one surface stays enabled.
+  private var menuBarInserted: Binding<Bool> {
+    Binding(
+      get: { store.settings.appVisibility.showsMenuBarIcon },
+      set: { newValue in
+        // Ignore MenuBarExtra's scene-evaluation echo; only a real flip should persist.
+        guard newValue != store.settings.appVisibility.showsMenuBarIcon else { return }
+        store.send(.settings(.setAppVisibility(newValue ? .dockAndMenuBar : .dock)))
+      }
+    )
   }
 }
