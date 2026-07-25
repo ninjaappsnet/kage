@@ -339,6 +339,10 @@ struct WorktreeDetailView: View {
         EmptyStateView(store: store.scope(state: \.repositories, action: \.repositories))
       }
     }
+    // Lives on the Group, not inside the `if let` branch: a workspace switch
+    // that leaves nothing selected tears that branch down in the same SwiftUI
+    // transaction, so an onChange inside it would never fire.
+    .modifier(CloseFileViewerOnWorkspaceSwitch(close: { fileViewer.close() }))
   }
 
   private func applyFocusedActions<Content: View>(

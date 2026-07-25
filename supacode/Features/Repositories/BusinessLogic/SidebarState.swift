@@ -34,6 +34,12 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
   /// The workspace whose member repositories the sidebar is currently
   /// filtered to. `nil` means "All Projects" — no filter, today's behavior.
   var activeWorkspaceID: Workspace.ID?
+  /// Last worktree the user had selected in each workspace, keyed by workspace
+  /// id (`allProjectsSelectionKey` for the unfiltered "All Projects" view).
+  /// Switching workspaces restores the entry so each one keeps its own focused
+  /// row instead of stranding the detail pane on a now-hidden repository; a
+  /// workspace with no entry falls back to the first visible sidebar row.
+  var lastSelectionByWorkspace: [String: Worktree.ID]
 
   /// Memberwise initializer. `schemaVersion` defaults to `0`, meaning
   /// "not migrated yet, or migrator failed". The boot-time migrator
@@ -45,13 +51,15 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
     sections: OrderedDictionary<Repository.ID, Section> = [:],
     focusedWorktreeID: Worktree.ID? = nil,
     workspaces: OrderedDictionary<Workspace.ID, Workspace> = [:],
-    activeWorkspaceID: Workspace.ID? = nil
+    activeWorkspaceID: Workspace.ID? = nil,
+    lastSelectionByWorkspace: [String: Worktree.ID] = [:]
   ) {
     self.schemaVersion = schemaVersion
     self.sections = sections
     self.focusedWorktreeID = focusedWorktreeID
     self.workspaces = workspaces
     self.activeWorkspaceID = activeWorkspaceID
+    self.lastSelectionByWorkspace = lastSelectionByWorkspace
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -60,6 +68,7 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
     case focusedWorktreeID
     case workspaces
     case activeWorkspaceID
+    case lastSelectionByWorkspace
   }
 
   init(from decoder: any Decoder) throws {
@@ -83,6 +92,14 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
         forKey: .workspaces
       ) ?? [:]
     self.activeWorkspaceID = try container.decodeIfPresent(Workspace.ID.self, forKey: .activeWorkspaceID)
+    // Also additive: a file written before per-workspace selection memory
+    // shipped has no such key, and every workspace falls back to "first visible
+    // row" on its first visit exactly as it did before.
+    self.lastSelectionByWorkspace =
+      try container.decodeIfPresent(
+        [String: Worktree.ID].self,
+        forKey: .lastSelectionByWorkspace
+      ) ?? [:]
   }
 
   func encode(to encoder: any Encoder) throws {
@@ -99,7 +116,15 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
       try container.encode(workspaces, forKey: .workspaces)
     }
     try container.encodeIfPresent(activeWorkspaceID, forKey: .activeWorkspaceID)
+    if !lastSelectionByWorkspace.isEmpty {
+      try container.encode(lastSelectionByWorkspace, forKey: .lastSelectionByWorkspace)
+    }
   }
+
+  /// Key `lastSelectionByWorkspace` uses for the unfiltered "All Projects"
+  /// view, which has no workspace id of its own. Workspace ids are UUID
+  /// strings, so a bare word can never collide with a real one.
+  static let allProjectsSelectionKey = "all"
 
   /// User-created sidebar workspace: a named filter over repositories. A
   /// repository's membership is stored as a back-pointer on its `Section`
@@ -599,6 +624,7 @@ nonisolated extension SidebarState {
     if activeWorkspaceID == id {
       activeWorkspaceID = nil
     }
+    lastSelectionByWorkspace.removeValue(forKey: id)
   }
 
   /// Assign `repositoryID` to `workspaceID` (or clear membership when
@@ -606,6 +632,31 @@ nonisolated extension SidebarState {
   /// yet can still join a workspace.
   mutating func setWorkspace(_ workspaceID: Workspace.ID?, for repositoryID: Repository.ID) {
     sections[repositoryID, default: .init()].workspaceID = workspaceID
+  }
+
+  /// Record the row `workspaceID` was last focused on, so switching back to it
+  /// restores that row instead of resetting to the top of the sidebar. Pass
+  /// `nil` for the "All Projects" filter. A `nil` `worktreeID` (nothing
+  /// selected) drops the entry, so the workspace falls back to its first
+  /// visible row next time rather than restoring a stale row.
+  mutating func rememberSelection(_ worktreeID: Worktree.ID?, for workspaceID: Workspace.ID?) {
+    let key = Self.selectionKey(for: workspaceID)
+    if let worktreeID {
+      lastSelectionByWorkspace[key] = worktreeID
+    } else {
+      lastSelectionByWorkspace.removeValue(forKey: key)
+    }
+  }
+
+  /// Row `workspaceID` was last focused on, or `nil` on its first-ever visit.
+  /// Callers must still validate the row is live, visible and unarchived — the
+  /// worktree may have been deleted or moved since it was remembered.
+  func rememberedSelection(for workspaceID: Workspace.ID?) -> Worktree.ID? {
+    lastSelectionByWorkspace[Self.selectionKey(for: workspaceID)]
+  }
+
+  private static func selectionKey(for workspaceID: Workspace.ID?) -> String {
+    workspaceID ?? allProjectsSelectionKey
   }
 
   /// Shared insertion helper — clamps `position` to the current

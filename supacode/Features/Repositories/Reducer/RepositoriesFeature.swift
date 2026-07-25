@@ -2770,8 +2770,49 @@ struct RepositoriesFeature {
         // Guard against a stale id (e.g. a workspace deleted in another
         // window): an unknown non-nil id falls back to "All".
         let resolved = workspaceID.flatMap { state.sidebar.workspaces[$0] != nil ? $0 : nil }
-        state.$sidebar.withLock { $0.activeWorkspaceID = resolved }
-        return .none
+        let previous = state.sidebar.activeWorkspaceID
+        // Re-picking the filter that is already active must not overwrite what
+        // it remembers, so this can no longer be an idempotent write.
+        guard resolved != previous else { return .none }
+        let outgoingSelection = state.selectedWorktreeID
+        state.$sidebar.withLock {
+          $0.rememberSelection(outgoingSelection, for: previous)
+          $0.activeWorkspaceID = resolved
+        }
+        // The rows below have to reflect the new filter, and the post-reduce
+        // hook only recomputes after this arm returns. Idempotent, so the
+        // hook's own pass stays a no-op.
+        state.recomputeSidebarStructureIfChanged()
+        // The archived list and failed-repository rows aren't worktrees in a
+        // filtered repository, so a filter change leaves them selected.
+        if let selection = state.selection, selection.worktreeID == nil { return .none }
+        // `nil` means "All Projects": every repository is visible.
+        let visibleRepositoryIDs = state.workspaceVisibleRepositoryIDs()
+        // The selected worktree's repository survived the filter change (e.g.
+        // switching to "All Projects"), so keep the user where they are.
+        if let selectedWorktreeID = state.selectedWorktreeID,
+          let repositoryID = state.repositoryID(for: selectedWorktreeID),
+          visibleRepositoryIDs?.contains(repositoryID) ?? true
+        {
+          return .none
+        }
+        // First-ever visit to this workspace, or nothing left to select: the
+        // top of the freshly filtered sidebar.
+        var target = state.sidebarStructure.hotkeySlots.first?.id
+        // A remembered row can have been deleted, archived, or moved to another
+        // workspace since it was recorded, so validate before restoring it.
+        if let remembered = state.sidebar.rememberedSelection(for: resolved),
+          state.worktree(for: remembered) != nil,
+          let repositoryID = state.repositoryID(for: remembered),
+          visibleRepositoryIDs?.contains(repositoryID) ?? true,
+          !state.sidebar.isArchived(remembered, in: repositoryID)
+        {
+          target = remembered
+        }
+        // Both nil means nothing was selected and nothing can be; skip the
+        // round trip rather than emit a redundant selection delegate.
+        guard target != state.selectedWorktreeID else { return .none }
+        return .send(.selectWorktree(target, focusTerminal: false))
 
       case .createWorkspace(let name):
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
