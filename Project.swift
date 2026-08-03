@@ -91,6 +91,7 @@ let gitTestSources: [Path] = [
   "supacodeTests/Git*.swift",
   "supacodeTests/RemoteSSHCommandTests.swift",
   "supacodeTests/ShellClient*.swift",
+  "supacodeTests/SocketLivenessCLITests.swift",
   "supacodeTests/WorktreeEnvironmentTests.swift",
   "supacodeTests/WorktreeStatusCLITests.swift",
 ]
@@ -223,6 +224,9 @@ let project = Project(
       bundleId: "net.ninjaapps.kage.settings-shared",
       deploymentTargets: .macOS("26.0"),
       infoPlist: .default,
+      resources: [
+        .folderReference(path: "Resources/Skills"),
+      ],
       buildableFolders: [
         "SupacodeSettingsShared",
       ],

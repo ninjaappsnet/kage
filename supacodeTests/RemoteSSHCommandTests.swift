@@ -246,12 +246,89 @@ struct SSHCommandTests {
   private static let commandLinePrefix =
     "/usr/bin/ssh " + controlOptionTokens.joined(separator: " ") + " -o ConnectTimeout=30 -tt devbox "
 
+  @Test func terminalCompatibilityFallsBackOnlyWhenGhosttyTerminfoIsMissing() async throws {
+    // `term: nil` unsets TERM; the `${TERM:-}` guard must leave it untouched
+    // (no spurious `infocmp` fork, no fallback), same for an empty TERM.
+    let scenarios = [
+      (term: "xterm-ghostty", infocmpExit: 0, expected: "xterm-ghostty"),
+      (term: "xterm-ghostty", infocmpExit: 1, expected: "xterm-256color"),
+      (term: "xterm-ghostty", infocmpExit: 127, expected: "xterm-256color"),
+      (term: "screen-256color", infocmpExit: 1, expected: "screen-256color"),
+      (term: "", infocmpExit: 1, expected: ""),
+      (term: nil, infocmpExit: 1, expected: ""),
+    ]
+
+    for scenario in scenarios {
+      let termSetup =
+        scenario.term.map { "TERM=\(SSHCommand.shellQuote($0)); export TERM; " } ?? "unset TERM; "
+      let process = Process()
+      let output = Pipe()
+      process.executableURL = URL(fileURLWithPath: "/bin/sh")
+      process.arguments = [
+        "-c",
+        "infocmp() { return \(scenario.infocmpExit); }; "
+          + termSetup
+          + SSHCommand.terminalCompatibilityPrelude
+          + #"printf '%s' "${TERM:-}""#,
+      ]
+      process.standardOutput = output
+      try await process.runToExit()
+
+      let resolved = String(bytes: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
+      #expect(process.terminationStatus == 0)
+      #expect(resolved == scenario.expected)
+    }
+  }
+
+  @Test func terminalCompatibleLoginShellCommandEmbedsFallbackPreludeAheadOfCommand() {
+    // Verified independently of the builder helpers: if the wrapper ever
+    // stopped injecting the prelude (silently no-op'ing the fix), these
+    // literals break, whereas the self-referential `commandLine` assertions
+    // below would not.
+    let wrapped = SSHCommand.terminalCompatibleLoginShellCommand("exec \"$SHELL\" -l")
+    #expect(wrapped.hasPrefix("exec /bin/sh -c "))
+    #expect(wrapped.contains(#"[ "${TERM:-}" = xterm-ghostty ]"#))
+    #expect(wrapped.contains("export TERM=xterm-256color"))
+    #expect(wrapped.contains("exec \"$SHELL\" -l"))
+  }
+
+  @Test func terminalCompatibleLoginShellCommandIsValidPosixSh() async throws {
+    let command = SSHCommand.terminalCompatibleLoginShellCommand(
+      SSHCommand.loginShellWrapped("echo 'ready'")
+    )
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/sh")
+    process.arguments = ["-n", "-c", command]
+    try await process.runToExit()
+    #expect(process.terminationStatus == 0, "sh -n rejected: \(command)")
+  }
+
+  @Test func terminalCompatibleLoginShellCommandRoundTripsSingleQuotedPayload() async throws {
+    // The extra `shellQuote` layer must preserve a single-quote-bearing payload
+    // through the local `/bin/sh -c` that runs the wrapped command.
+    let wrapped = SSHCommand.terminalCompatibleLoginShellCommand(#"printf '%s' "it's here""#)
+    let process = Process()
+    let output = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/bin/sh")
+    process.arguments = ["-c", wrapped]
+    process.standardOutput = output
+    try await process.runToExit()
+
+    let resolved = String(bytes: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
+    #expect(process.terminationStatus == 0)
+    #expect(resolved == "it's here")
+  }
+
   @Test func commandLineWrapsRemoteCommandInLoginShellQuotedForLocalShell() {
     let line = SSHCommand.commandLine(
       host: RemoteHost(alias: "devbox"),
       remoteCommand: "zmx attach supa-x"
     )
-    let expectedTail = SSHCommand.shellQuote(SSHCommand.loginShellWrapped("zmx attach supa-x"))
+    let expectedTail = SSHCommand.shellQuote(
+      SSHCommand.terminalCompatibleLoginShellCommand(
+        SSHCommand.loginShellWrapped("zmx attach supa-x")
+      )
+    )
     #expect(line == Self.commandLinePrefix + expectedTail)
   }
 
@@ -264,7 +341,9 @@ struct SSHCommandTests {
       positionalArguments: ["claude", "it's a test"]
     )
     let expectedTail = SSHCommand.shellQuote(
-      SSHCommand.loginShellWrapped("$0 \"$@\"", positionalArguments: ["claude", "it's a test"])
+      SSHCommand.terminalCompatibleLoginShellCommand(
+        SSHCommand.loginShellWrapped("$0 \"$@\"", positionalArguments: ["claude", "it's a test"])
+      )
     )
     #expect(line == Self.commandLinePrefix + expectedTail)
   }
@@ -538,21 +617,62 @@ struct ZmxAttachRemoteTests {
   @Test func buildRemoteCommandFallsBackToBareReconnectLoopWhenLocalZmxUnavailable() {
     let launch = makeLaunch(hostPersistenceEnabled: false)
     let command = ZmxAttach.buildRemoteCommand(launch, localZmxExecutablePath: nil)
-    // No local zmx: still a reconnect loop, just without quit persistence.
-    #expect(
-      command
-        == SSHReconnectLoop.script(
-          connect: SSHCommand.commandLine(
-            host: launch.host,
-            remoteCommand: ZmxAttach.posixShellWrapped(ZmxAttach.remoteConnectScript(launch))
-          ),
-          reconnect: SSHCommand.commandLine(
-            host: launch.host,
-            remoteCommand: ZmxAttach.posixShellWrapped(ZmxAttach.remoteReconnectScript(launch))
-          )
-        )
+    let loop = SSHReconnectLoop.script(
+      connect: SSHCommand.commandLine(
+        host: launch.host,
+        remoteCommand: ZmxAttach.posixShellWrapped(ZmxAttach.remoteConnectScript(launch))
+      ),
+      reconnect: SSHCommand.commandLine(
+        host: launch.host,
+        remoteCommand: ZmxAttach.posixShellWrapped(ZmxAttach.remoteReconnectScript(launch))
+      )
     )
+    // No local zmx: still a reconnect loop, just without quit persistence, but
+    // wrapped in `/bin/sh -c` so Ghostty's `exec -l <command>` leads with an
+    // executable and not the loop's opening `trap` builtin (#737).
+    #expect(command == "/bin/sh -c " + ZmxAttach.shellQuote(loop))
+    #expect(command.hasPrefix("/bin/sh -c "))
     #expect(!command.contains("zmx attach"))
+  }
+
+  @Test func bareReconnectLoopSurvivesGhosttyExecLoginWrapping() async throws {
+    // Ghostty runs a surface command as `bash -c "exec -l <command>"`, so it
+    // must lead with an executable. `sh -n` confirms the fallback's outer
+    // wrapper is balanced (it can't descend into the single-quoted inner loop;
+    // that template is parse-checked in
+    // `reconnectLoopScriptsAreValidShAndPassExitCodesThrough`). The benign runs
+    // below then prove the `/bin/sh -c` prefix lets `exec -l` resolve an
+    // executable, while the unwrapped loop still dies with `trap: not found`
+    // (#737).
+    let launch = makeLaunch(hostPersistenceEnabled: false)
+    let command = ZmxAttach.buildRemoteCommand(launch, localZmxExecutablePath: nil)
+    let parse = Process()
+    parse.executableURL = URL(fileURLWithPath: "/bin/sh")
+    parse.arguments = ["-n", "-c", command]
+    try await parse.runToExit()
+    #expect(parse.terminationStatus == 0, "sh -n rejected: \(command)")
+
+    // A stand-in loop with connect lines that exit 0 (non-255, so the retry
+    // body never runs) exercises the exact `bash -c "exec -l <command>"` shape
+    // Ghostty applies, isolated from real ssh dialing.
+    let benignLoop = SSHReconnectLoop.script(connect: "sh -c 'exit 0'", reconnect: "sh -c 'exit 0'")
+
+    let wrapped = Process()
+    wrapped.executableURL = URL(fileURLWithPath: "/bin/bash")
+    wrapped.arguments = ["--noprofile", "--norc", "-c", "exec -l /bin/sh -c \(ZmxAttach.shellQuote(benignLoop))"]
+    wrapped.standardOutput = FileHandle.nullDevice
+    wrapped.standardError = FileHandle.nullDevice
+    try await wrapped.runToExit()
+    #expect(wrapped.terminationStatus == 0, "wrapped loop failed under exec -l")
+
+    // Control: the unwrapped loop is exactly what broke #737.
+    let bare = Process()
+    bare.executableURL = URL(fileURLWithPath: "/bin/bash")
+    bare.arguments = ["--noprofile", "--norc", "-c", "exec -l \(benignLoop)"]
+    bare.standardOutput = FileHandle.nullDevice
+    bare.standardError = FileHandle.nullDevice
+    try await bare.runToExit()
+    #expect(bare.terminationStatus == 127, "bare loop unexpectedly survived exec -l")
   }
 
   @Test func buildRemoteCommandForwardsUsernameAndPort() {
