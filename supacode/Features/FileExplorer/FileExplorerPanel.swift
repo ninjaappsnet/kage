@@ -32,7 +32,9 @@ struct FileExplorerPanel: View {
   var body: some View {
     HStack(spacing: 0) {
       panelBody
-        .frame(width: width)
+        // Ideal-not-rigid width, for the same reason as the file viewer: a rigid
+        // width on a safe-area inset becomes part of the window's minimum width.
+        .frame(minWidth: 0, idealWidth: width, maxWidth: width)
       resizeHandle
     }
     .onAppear { width = Self.clamp(CGFloat(storedWidth)) }

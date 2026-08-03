@@ -22,7 +22,12 @@ struct FileViewerPanel: View {
     HStack(spacing: 0) {
       resizeHandle
       panelBody
-        .frame(width: width)
+        // Ideal-not-rigid width: the pane docks as a safe-area inset, so a rigid
+        // `.frame(width:)` adds its full width to the window's own minimum —
+        // opening a file grew the window and left it stuck at that width. With a
+        // zero minimum the pane still renders at `width` whenever there is room
+        // and yields instead of the window when there isn't.
+        .frame(minWidth: 0, idealWidth: width, maxWidth: width)
     }
     .onAppear { width = Self.clamp(CGFloat(storedWidth)) }
   }
