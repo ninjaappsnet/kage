@@ -15,6 +15,10 @@ jobs:
   # Warm the binary cache upstream so test and build consume it on the same commit.
   warm:
     runs-on: macos-26
+    # No Tuist project is linked to this fork, so `tuist cache warm` can't reach a
+    # remote cache. Keep the job in the graph — `needs: [warm]` cascade-skips its
+    # dependents if this is skipped, but tolerates it failing.
+    continue-on-error: true
     strategy:
       matrix:
         configuration: [Debug, Release]

@@ -30,7 +30,10 @@ runs:
     - name: Authenticate with Tuist
       if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
       shell: bash
-      run: mise exec -- tuist auth login
+      # This fork has no Tuist project linked to it, so OIDC login fails. The
+      # remote binary cache is an optimization; generation tolerates no auth via
+      # Tuist.swift's optionalAuthentication. Don't fail the whole pipeline.
+      run: mise exec -- tuist auth login || echo "no linked Tuist project; continuing without the remote cache"
     - name: Xcode cache key
       shell: bash
       run: |
