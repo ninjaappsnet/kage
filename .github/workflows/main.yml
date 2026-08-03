@@ -302,7 +302,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          token: ${{ secrets.GH_RELEASE_TOKEN }}
+          # Unset, the secret resolves to "" and overrides checkout's own default,
+          # leaving no credential for the push below. This job already holds
+          # contents: write, so github.token is enough to move the tag.
+          token: ${{ secrets.GH_RELEASE_TOKEN || github.token }}
       - name: Force-move tip tag
         run: |
           git config user.name "github-actions[bot]"
