@@ -50,6 +50,31 @@ struct FileExplorerPanelSizingTests {
     #expect(width < 100, "viewer inset minimum width was \(width)")
   }
 
+  /// Each viewer content path wraps a different renderer — a non-wrapping
+  /// `NSTextView`, MarkdownUI, a `WKWebView`, an `NSImage` at natural size — and
+  /// any one of them that refuses to shrink drags the pane's minimum back up.
+  @Test(arguments: [
+    ("long-lines.swift", String(repeating: "let averyLongIdentifierName = 1  // padding\n", count: 40)),
+    ("wide-single-line.txt", String(repeating: "x", count: 4000)),
+    ("readme.md", "# Title\n\n\(String(repeating: "word ", count: 400))\n\n```swift\nlet x = 1\n```\n"),
+    ("report.html", "<html><body><h1>\(String(repeating: "wide ", count: 400))</h1></body></html>"),
+  ])
+  func viewerContentDoesNotImposeAWindowMinimum(name: String, contents: String) throws {
+    let directory = try Self.makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent(name)
+    try contents.write(to: file, atomically: true, encoding: .utf8)
+
+    let model = FileViewerModel()
+    model.open(file)
+
+    let width = Self.hostedMinimumWidth(
+      FileViewerPanel(model: model, onClose: {}),
+      edge: .trailing
+    )
+    #expect(width < 100, "viewer minimum width for \(name) was \(width)")
+  }
+
   @Test func fileExplorerPanelDoesNotImposeItsWidthAsAWindowMinimum() throws {
     let directory = try Self.makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
