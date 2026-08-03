@@ -155,4 +155,76 @@ struct FileViewerModelTests {
     model.open(url)
     #expect(model.shouldHighlightSyntax)
   }
+
+  @Test func htmlFileOpensRenderedAndStaysEditable() throws {
+    let url = try Self.makeTempFile(name: "report.html", contents: Data("<h1>Hi</h1>".utf8))
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+    let model = FileViewerModel()
+    model.open(url)
+    #expect(model.isHTML)
+    #expect(!model.isMarkdown)
+    #expect(model.mode == .rendered)
+    // Unlike media, HTML is still a text file: the raw tab must remain editable.
+    #expect(model.loadState == .loaded)
+    #expect(model.isEditable)
+    #expect(model.language == "xml")
+  }
+
+  @Test func htmlOpensUntrustedEveryTime() throws {
+    let trusted = try Self.makeTempFile(name: "a.html", contents: Data("<p>a</p>".utf8))
+    let other = try Self.makeTempFile(name: "b.html", contents: Data("<p>b</p>".utf8))
+    defer {
+      try? FileManager.default.removeItem(at: trusted.deletingLastPathComponent())
+      try? FileManager.default.removeItem(at: other.deletingLastPathComponent())
+    }
+
+    let model = FileViewerModel()
+    model.open(trusted)
+    #expect(!model.isHTMLTrusted)
+    model.trustHTML()
+    #expect(model.isHTMLTrusted)
+
+    // Trust is per-document: opening another file must not inherit it.
+    model.open(other)
+    #expect(!model.isHTMLTrusted)
+  }
+
+  @Test func nonHTMLFileClearsHTMLFlag() throws {
+    let html = try Self.makeTempFile(name: "page.html", contents: Data("<p>x</p>".utf8))
+    let swift = try Self.makeTempFile(name: "main.swift", contents: Data("let x = 1".utf8))
+    defer {
+      try? FileManager.default.removeItem(at: html.deletingLastPathComponent())
+      try? FileManager.default.removeItem(at: swift.deletingLastPathComponent())
+    }
+
+    let model = FileViewerModel()
+    model.open(html)
+    #expect(model.isHTML)
+    model.open(swift)
+    #expect(!model.isHTML)
+    #expect(model.mode == .raw)
+  }
+
+  @Test func closeClearsHTMLState() throws {
+    let url = try Self.makeTempFile(name: "report.html", contents: Data("<h1>Hi</h1>".utf8))
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+    let model = FileViewerModel()
+    model.open(url)
+    model.trustHTML()
+    model.close()
+    #expect(!model.isHTML)
+    #expect(!model.isHTMLTrusted)
+  }
+
+  @Test func binaryFileWithHTMLExtensionIsNotPreviewed() throws {
+    let url = try Self.makeTempFile(name: "corrupt.html", contents: Data([0x00, 0x01, 0x02]))
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+    let model = FileViewerModel()
+    model.open(url)
+    #expect(model.loadState == .binary)
+    #expect(!model.isHTML)
+  }
 }

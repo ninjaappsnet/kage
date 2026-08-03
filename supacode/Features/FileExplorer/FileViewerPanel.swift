@@ -96,7 +96,7 @@ struct FileViewerPanel: View {
           .help("Unsaved changes")
       }
       Spacer(minLength: 4)
-      if model.isMarkdown {
+      if model.isMarkdown || model.isHTML {
         Picker("View mode", selection: $model.mode) {
           Text("Rendered").tag(FileViewerModel.Mode.rendered)
           Text("Raw").tag(FileViewerModel.Mode.raw)
@@ -104,7 +104,7 @@ struct FileViewerPanel: View {
         .pickerStyle(.segmented)
         .labelsHidden()
         .fixedSize()
-        .help("Toggle rendered markdown and editable source")
+        .help("Toggle the rendered page and editable source")
       }
       if model.isEditable {
         Button {
@@ -178,6 +178,10 @@ struct FileViewerPanel: View {
     case .loaded:
       if model.isMarkdown, model.mode == .rendered {
         MarkdownPreview(markdown: model.text)
+      } else if model.isHTML, model.mode == .rendered, let url = model.fileURL {
+        // Rendered from disk, not from `model.text`: the page pulls its own
+        // stylesheets and scripts, which only resolve relative to the real file.
+        HTMLPreview(fileURL: url, isTrusted: model.isHTMLTrusted) { model.trustHTML() }
       } else {
         HighlightedCodeEditor(
           text: $model.text,

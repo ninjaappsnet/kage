@@ -27,9 +27,16 @@ final class FileViewerModel {
   private(set) var displayName = ""
   private(set) var loadState: LoadState = .empty
   private(set) var isMarkdown = false
+  private(set) var isHTML = false
   private(set) var language: String?
 
-  /// Markdown view mode. Ignored for non-markdown files (always editable).
+  /// Whether the open HTML document may reach the network. Off for every newly
+  /// opened file: the preview runs the page's JavaScript, and these files are
+  /// routinely agent-written, so egress is opt-in per document rather than a
+  /// setting that silently stays on. See `HTMLPreviewPolicy.contentSecurityPolicy`.
+  private(set) var isHTMLTrusted = false
+
+  /// Markdown/HTML view mode. Ignored for other files (always editable).
   var mode: Mode = .rendered
 
   /// The editable buffer. Diverges from `savedText` once the user types.
@@ -72,6 +79,7 @@ final class FileViewerModel {
     externalChangePending = false
     saveErrorMessage = nil
     mode = .rendered
+    isHTMLTrusted = false
 
     do {
       // FileManager (not URL.resourceValues) for the mtime: URL caches resource
@@ -98,8 +106,11 @@ final class FileViewerModel {
       savedText = string
       text = string
       isMarkdown = FileViewerFileType.isMarkdown(url: standardized, sample: string)
+      // Classified only once the bytes are known to be text, so a file that
+      // merely ends in `.html` but holds binary never reaches the web view.
+      isHTML = HTMLPreviewPolicy.isPreviewable(url: standardized)
       language = isMarkdown ? "markdown" : FileViewerFileType.highlightrLanguage(for: standardized)
-      mode = isMarkdown ? .rendered : .raw
+      mode = isMarkdown || isHTML ? .rendered : .raw
       loadState = .loaded
     } catch {
       fileViewerLogger.error("Failed to open \(standardized.path): \(error.localizedDescription)")
@@ -132,6 +143,13 @@ final class FileViewerModel {
     open(url)
   }
 
+  /// Let the open HTML document reach the network. Scoped to this document —
+  /// `open(_:)` clears it — so trust never leaks to the next file.
+  func trustHTML() {
+    guard isHTML else { return }
+    isHTMLTrusted = true
+  }
+
   func close() {
     fileURL = nil
     displayName = ""
@@ -139,6 +157,8 @@ final class FileViewerModel {
     text = ""
     language = nil
     isMarkdown = false
+    isHTML = false
+    isHTMLTrusted = false
     mode = .rendered
     diskModificationDate = nil
     externalChangePending = false
@@ -180,6 +200,7 @@ final class FileViewerModel {
     text = ""
     language = nil
     isMarkdown = false
+    isHTML = false
     fileByteCount = 0
     loadState = state
   }
