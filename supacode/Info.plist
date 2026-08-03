@@ -60,7 +60,7 @@
 	<key>SUFeedURL</key>
     <string>https://github.com/ninjaappsnet/kage/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>eBdTbl+6sR8gxO1zyzyvdQHuJrXMLxD31oCc+JoW5jo=</string>
+	<string>aQZdFzUcItOmvNZnSWklx3F5KAy3TM3PzDWBNB4NpM4=</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUAutomaticallyUpdate</key>
