@@ -14,7 +14,7 @@ concurrency:
 jobs:
   # Warm the binary cache upstream so test and build consume it on the same commit.
   warm:
-    runs-on: macos-26
+    runs-on: [self-hosted, macOS, ARM64]
     # No Tuist project is linked to this fork, so `tuist cache warm` can't reach a
     # remote cache. Keep the job in the graph — `needs: [warm]` cascade-skips its
     # dependents if this is skipped, but tolerates it failing.
@@ -38,7 +38,7 @@ jobs:
           TUIST_CACHE_CONFIGURATION: ${{ matrix.configuration }}
 
   test:
-    runs-on: macos-26
+    runs-on: [self-hosted, macOS, ARM64]
     needs: [warm]
     permissions:
       contents: read
@@ -79,7 +79,7 @@ jobs:
           fi
 
   build:
-    runs-on: macos-26
+    runs-on: [self-hosted, macOS, ARM64]
     needs: [check, warm]
     if: needs.check.outputs.should_skip != 'true'
     permissions:
@@ -167,7 +167,8 @@ jobs:
           xcrun notarytool store-credentials "notarytool-profile" \
             --key notarization_key.p8 \
             --key-id "$APPLE_NOTARIZATION_KEY_ID" \
-            --issuer "$APPLE_NOTARIZATION_ISSUER"
+            --issuer "$APPLE_NOTARIZATION_ISSUER" \
+            --keychain "$HOME/Library/Keychains/build.keychain-db"
           rm notarization_key.p8
       - name: Build DMG
         run: |
@@ -259,6 +260,19 @@ jobs:
             build/Kage.app.zip
             build/appcast.xml
             build/*.delta
+      # A hosted runner is discarded after the job; a self-hosted one is not, so the
+      # signing keychain and the search-list/default changes above have to be undone
+      # or they outlive the run and break the machine's normal keychain use.
+      - name: Restore keychain state
+        if: always()
+        run: |
+          set +e
+          security default-keychain -s "$HOME/Library/Keychains/login.keychain-db"
+          remaining=$(security list-keychains -d user | tr -d '"' | grep -v 'build\.keychain' | xargs)
+          [ -n "$remaining" ] && security list-keychains -d user -s $remaining
+          security delete-keychain build.keychain
+          rm -f build-cert.p12 notarization_key.p8
+          exit 0
 
   # Gated on build so a stable release is only detected when the binary exists.
   # The matching tag (pushed via --follow-tags) marks this exact commit as vX.Y.Z.
@@ -316,7 +330,7 @@ jobs:
   # Stable release: reuses the SAME notarized binaries build produced (no second
   # archive or notarization) and publishes them with auto-generated notes.
   publish-stable:
-    runs-on: macos-26
+    runs-on: [self-hosted, macOS, ARM64]
     needs: [build, detect]
     if: ${{ needs.detect.outputs.release_tag != '' }}
     permissions:

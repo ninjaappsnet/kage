@@ -21,8 +21,10 @@ runs:
       run: |
         set -euo pipefail
         developer_dir="$(./scripts/select-developer-dir.sh)"
-        sudo xcode-select -s "$developer_dir"
-        xcodebuild -version
+        # Scope the toolchain to this job instead of `sudo xcode-select -s`, which
+        # would repoint the whole machine — this also runs on a self-hosted runner.
+        echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
+        DEVELOPER_DIR="$developer_dir" xcodebuild -version
     - uses: jdx/mise-action@v4
       with:
         version: 2026.3.0
