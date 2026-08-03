@@ -28,6 +28,39 @@ struct FileViewerModelTests {
     #expect(model.hasFile)
   }
 
+  @Test func openMarksContentPreparingUntilTheViewReportsItRendered() throws {
+    let url = try Self.makeTempFile(name: "a.txt", contents: Data("hello".utf8))
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+    let model = FileViewerModel()
+    model.open(url)
+    // Rendering a large document blocks the main thread for seconds, and the
+    // pane can't paint until it finishes. The flag lets the pane show a spinner
+    // in an earlier frame instead of the click appearing to do nothing.
+    #expect(model.isPreparingContent)
+    model.contentDidRender()
+    #expect(!model.isPreparingContent)
+  }
+
+  @Test func reopeningTheSameFileKeepsUnsavedEdits() throws {
+    let url = try Self.makeTempFile(name: "a.txt", contents: Data("hello".utf8))
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+    let model = FileViewerModel()
+    model.open(url)
+    model.contentDidRender()
+    model.text = "edited, not saved"
+    // Clicks queued up behind a slow render all land at once, so re-opening the
+    // file already on screen must not discard the buffer; Reload from Disk is
+    // the explicit way to throw it away.
+    model.open(url)
+    #expect(model.text == "edited, not saved")
+    #expect(model.isDirty)
+
+    model.reloadFromDisk()
+    #expect(model.text == "hello")
+  }
+
   @Test func editingMarksDirty() throws {
     let url = try Self.makeTempFile(name: "a.txt", contents: Data("hello".utf8))
     defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

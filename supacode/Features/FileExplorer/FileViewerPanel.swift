@@ -13,6 +13,8 @@ struct FileViewerPanel: View {
 
   @State private var width: CGFloat = 420
   @State private var showCloseConfirm = false
+  /// Gates the real renderer behind one runloop turn so the spinner paints first.
+  @State private var isContentMounted = false
   @Shared(.appStorage("fileViewerWidth")) private var storedWidth = 420.0
 
   private static let minWidth: CGFloat = 280
@@ -30,6 +32,10 @@ struct FileViewerPanel: View {
         .frame(minWidth: 0, idealWidth: width, maxWidth: width)
     }
     .onAppear { width = Self.clamp(CGFloat(storedWidth)) }
+    // Every new file goes back through the spinner: the next document may be the
+    // slow one, and the pane is reused rather than rebuilt.
+    .onChange(of: model.fileURL) { _, _ in isContentMounted = false }
+    .busyCursor(model.isPreparingContent)
   }
 
   private var panelBody: some View {
@@ -177,6 +183,44 @@ struct FileViewerPanel: View {
 
   @ViewBuilder
   private var content: some View {
+    if isContentMounted {
+      loadedContent
+        // Fires after the (potentially multi-second) first layout of the real
+        // renderer, which is the moment the pane is genuinely usable.
+        .onAppear { model.contentDidRender() }
+    } else {
+      preparingPlaceholder
+    }
+  }
+
+  /// Drawn in the frame right after a file is opened, before the real renderer is
+  /// mounted. Rendering a long document blocks the main thread for seconds, so
+  /// without this the pane itself can't paint and the click looks ignored.
+  private var preparingPlaceholder: some View {
+    VStack(spacing: 10) {
+      ProgressView()
+        .controlSize(.small)
+      Text("Opening \(model.displayName)…")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .truncationMode(.middle)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("Opening \(model.displayName)")
+    // Hand the mount of the real content to the next runloop turn, so this frame
+    // reaches the screen first. `.task` alone wouldn't: it can run inside the
+    // same transaction, before anything is drawn.
+    .onAppear {
+      DispatchQueue.main.async {
+        isContentMounted = true
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var loadedContent: some View {
     switch model.loadState {
     case .empty:
       placeholder("No File Selected", systemImage: "doc")

@@ -322,6 +322,10 @@ struct WorktreeDetailView: View {
             )
             .id(selectedWorktree.id)
             .transition(.move(edge: .leading).combined(with: .opacity))
+            // Clicks are swallowed anyway while the first render blocks the main
+            // thread; disabling makes that visible instead of silently queueing
+            // taps that all fire at once when the pane finally opens.
+            .disabled(fileViewer.isPreparingContent)
           }
         }
         .safeAreaInset(edge: .trailing, spacing: 0) {

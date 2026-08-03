@@ -187,14 +187,10 @@ private struct FileExplorerRowView: View {
         .fill(Color.accentColor.opacity(isSelected ? 0.18 : 0))
         .padding(.horizontal, 4)
     )
-    .onTapGesture(count: 2) {
-      model.select(node)
-      if node.isDirectory {
-        model.toggleExpansion(node)
-      } else {
-        model.openWithDefaultApp(node)
-      }
-    }
+    // Single tap only. A competing `.onTapGesture(count: 2)` made SwiftUI hold
+    // every single click for the double-click interval — a measured 350ms of
+    // dead time before the preview even started opening. Opening a file in its
+    // default app lives in the context menu ("Open") instead.
     .onTapGesture {
       model.activate(node)
     }

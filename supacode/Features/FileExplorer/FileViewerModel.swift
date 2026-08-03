@@ -57,6 +57,13 @@ final class FileViewerModel {
 
   private var fileByteCount = 0
 
+  /// True from the moment a file is opened until the pane reports that the real
+  /// content has been mounted. Reading the file is fast, but rendering it is not
+  /// — a long markdown document blocks the main thread for seconds, and nothing
+  /// can paint while it does. The pane draws a spinner for this flag in an
+  /// earlier frame, so a click has visible feedback instead of appearing dead.
+  private(set) var isPreparingContent = false
+
   var hasFile: Bool { fileURL != nil }
 
   /// Only text files are editable; media/binary/oversized previews are not.
@@ -73,6 +80,21 @@ final class FileViewerModel {
   /// Load `url` into the editor, classifying it as markdown / code / binary and
   /// guarding against oversized files.
   func open(_ url: URL) {
+    // Re-opening the file already on screen would re-read it from disk; with
+    // unsaved edits in the buffer that silently discards them. Reload from Disk
+    // remains the explicit way to throw the buffer away.
+    guard fileURL?.standardizedFileURL != url.standardizedFileURL || !isDirty else { return }
+    load(url)
+  }
+
+  /// Marks the pane's real content as mounted, clearing the spinner the pane
+  /// shows while the (potentially multi-second) first render runs.
+  func contentDidRender() {
+    isPreparingContent = false
+  }
+
+  private func load(_ url: URL) {
+    isPreparingContent = true
     let standardized = url.standardizedFileURL
     fileURL = standardized
     displayName = standardized.lastPathComponent
@@ -137,10 +159,12 @@ final class FileViewerModel {
     write(to: url)
   }
 
-  /// Discard the buffer and re-read the current file from disk.
+  /// Discard the buffer and re-read the current file from disk. Goes straight to
+  /// `load`, bypassing `open`'s guard against clobbering unsaved edits — that is
+  /// exactly what this action is for.
   func reloadFromDisk() {
     guard let url = fileURL else { return }
-    open(url)
+    load(url)
   }
 
   /// Let the open HTML document reach the network. Scoped to this document —
@@ -151,6 +175,7 @@ final class FileViewerModel {
   }
 
   func close() {
+    isPreparingContent = false
     fileURL = nil
     displayName = ""
     savedText = ""
