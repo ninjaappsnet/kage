@@ -12,34 +12,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Warm the binary cache upstream so test and build consume it on the same commit.
-  warm:
-    runs-on: [self-hosted, macOS, ARM64]
-    # No Tuist project is linked to this fork, so `tuist cache warm` can't reach a
-    # remote cache. Keep the job in the graph — `needs: [warm]` cascade-skips its
-    # dependents if this is skipped, but tolerates it failing.
-    continue-on-error: true
-    strategy:
-      matrix:
-        configuration: [Debug, Release]
-    permissions:
-      contents: read
-      id-token: write
-    env:
-      MISE_HTTP_TIMEOUT: 120
-      MISE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: recursive
-      - uses: ./.github/actions/setup-macos
-      - run: make warm-cache
-        env:
-          TUIST_CACHE_CONFIGURATION: ${{ matrix.configuration }}
-
+  # Upstream warms the Tuist binary cache here so test and build consume it on the
+  # same commit. That job is dropped on this fork: no Tuist project is linked to it,
+  # so there is no remote cache for a separate job to publish to or read from, and
+  # warming can only cost two macOS jobs per push. Restore it alongside a real
+  # fullHandle in Tuist.swift if this repo ever gets its own Tuist project.
   test:
     runs-on: [self-hosted, macOS, ARM64]
-    needs: [warm]
     permissions:
       contents: read
       id-token: write
@@ -80,7 +59,7 @@ jobs:
 
   build:
     runs-on: [self-hosted, macOS, ARM64]
-    needs: [check, warm]
+    needs: [check]
     if: needs.check.outputs.should_skip != 'true'
     permissions:
       contents: read
