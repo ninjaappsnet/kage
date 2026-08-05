@@ -13,6 +13,17 @@ import ProjectDescription
 let packageSettings = PackageSettings(
   productTypes: [
     "Sparkle": .framework,
+  ],
+  targetSettings: [
+    // Optimizing MarkdownUI miscompiles the associated-type witness for its
+    // `Markdown: View` conformance: at -O the runtime reads a corrupt mangled name
+    // for `Body` and aborts the first time a Markdown view's body is built —
+    // "failed to demangle witness for associated type 'Body' ... subject type q_
+    // does not conform to protocol View". Release-only, so it never shows up in a
+    // Debug build or in tests; it crashed every .md file in the viewer.
+    // -Onone here costs nothing measurable (markdown rendering is not hot) and
+    // leaves the app itself optimized. Revisit on a MarkdownUI or Xcode bump.
+    "MarkdownUI": ["SWIFT_OPTIMIZATION_LEVEL": "-Onone"],
   ]
 )
 #endif

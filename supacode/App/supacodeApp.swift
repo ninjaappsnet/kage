@@ -133,6 +133,8 @@ struct SupacodeApp: App {
   @State private var store: StoreOf<AppFeature>
 
   @MainActor init() {
+    // Inert unless SUPACODE_MD_SMOKE=1; guards a Release-only MarkdownUI miscompile.
+    MarkdownRenderSmokeCheck.runIfRequested()
     NSWindow.allowsAutomaticWindowTabbing = false
     UserDefaults.standard.set(200, forKey: "NSInitialToolTipDelay")
     // Fold the six legacy sidebar-state sources into `sidebar.json`

@@ -167,6 +167,14 @@ jobs:
           codesign -d --entitlements - "$APP_PATH/Contents/MacOS/Kage" 2>&1 | tee /tmp/supacode-entitlements.txt
           grep -q "com.apple.security.device.audio-input" /tmp/supacode-entitlements.txt
 
+      # Release-only regression guard: the unit tests build Debug and cannot reach
+      # this. At -O the optimizer miscompiled MarkdownUI's `Markdown: View`
+      # associated-type witness and every .md file aborted the app on open.
+      - name: Smoke-check the markdown renderer
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/export -name "Kage.app" -maxdepth 3 -print -quit)"
+          SUPACODE_MD_SMOKE=1 "$APP_PATH/Contents/MacOS/Kage"
       - name: Store notarization credentials
         run: |
           echo "$APPLE_NOTARIZATION_KEY" > notarization_key.p8
