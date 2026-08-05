@@ -35,7 +35,11 @@ assets, making re-runs idempotent. Patch bumps need nothing extra; minor and
 major require a `## title` + blank line + body headline that rides the tag into
 both the release notes and the Sparkle appcast.
 
-## After an upstream sync: re-run the rebrand sweep
+## Syncing from upstream
+
+Run the `/pull-upstream` skill (`.claude/skills/pull-upstream/`). It fetches,
+merges, re-applies the rebrand, and runs the checks in the order that matters.
+The rest of this section is what the skill automates, for when you do it by hand.
 
 Upstream writes its own name into user-facing copy — alert bodies, settings
 descriptions, error messages, onboarding cards. This fork renames those to Kage,
@@ -51,6 +55,12 @@ Take **upstream's** side on any such conflict, then re-run `make rebrand-fix`.
 The script is idempotent, so running it on a clean tree is a no-op, and it also
 catches copy upstream *added* since the last sync — which a conflict never
 surfaces, because a new line does not conflict with anything.
+
+This supersedes the original `scripts/rebrand.sh`, which swept a hand-maintained
+list of files. A list cannot catch copy upstream *adds* to a file nobody thought
+to list, and it had in fact drifted: 40 user-facing strings across 22 files were
+never on it. Discovery is now automatic and the judgment lives in two small
+exception lists instead.
 
 `scripts/rebrand-strings.sh` renames the standalone word `Supacode` only inside
 double-quoted regions of a line, so comments and identifiers (`SupacodePaths`,

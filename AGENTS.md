@@ -160,6 +160,7 @@ This repo is a fork that periodically syncs from upstream `supabitapp/supacode` 
 5. **Don't reformat upstream files.** Format churn on lines you didn't logically change is a guaranteed conflict. Touch only what the feature needs.
 6. **Auto-generated locks** (`Tuist/Package.resolved`): never hand-merge. On conflict take upstream's and regenerate (`tuist install`).
 7. **Sync often.** Rebase the feature branch on `upstream/main` frequently — many tiny conflicts beat one big-bang merge.
+8. **Sync with `/pull-upstream`.** The skill (`.claude/skills/pull-upstream/`) runs the fetch → merge → rebrand → verify order and carries the conflict-classification rules. Upstream's user-facing copy says "Supacode"; this fork renames it, so those lines conflict by design — take upstream's side and re-run `make rebrand-fix`.
 
 When reviewing your own diff, classify each touched **upstream** file as additive-safe vs landmine, and justify why each landmine couldn't be made additive.
 
