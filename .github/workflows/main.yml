@@ -19,6 +19,13 @@ jobs:
   # fullHandle in Tuist.swift if this repo ever gets its own Tuist project.
   test:
     runs-on: [self-hosted, macOS, ARM64]
+    # All the self-hosted runners live on one Mac under one account, so they share
+    # ~/.local/share/mise. Two jobs installing tools at once left a half-written
+    # binary and mise-action died with EBADMACHO. Serialize every macOS job across
+    # both workflows; concurrent Xcode builds on a single box buy little anyway.
+    concurrency:
+      group: macos-runner
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write
@@ -61,6 +68,10 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64]
     needs: [check]
     if: needs.check.outputs.should_skip != 'true'
+    # Shares the group with test and ci.yml's build — see the note on test above.
+    concurrency:
+      group: macos-runner
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write

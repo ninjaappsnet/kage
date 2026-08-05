@@ -12,6 +12,13 @@ concurrency:
 jobs:
   build:
     runs-on: [self-hosted, macOS, ARM64]
+    # Shared with main.yml's macOS jobs: the self-hosted runners are all on one
+    # machine and share ~/.local/share/mise, which corrupts under concurrent
+    # installs. cancel-in-progress stays false so a PR can never cancel a release
+    # build that already holds the group.
+    concurrency:
+      group: macos-runner
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write
