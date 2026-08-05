@@ -120,12 +120,14 @@ struct SidebarCommands: Commands {
         .appKeyboardShortcut(togglePullRequestInspector)
         .help("Toggle Pull Request Inspector (\(togglePullRequestInspector?.display ?? "none"))")
         .disabled(toggleInspectorPaneAction?.isEnabled != true)
-        Button("Toggle Files Inspector", systemImage: "list.bullet") {
-          toggleInspectorPaneAction?(.files)
+        if UpstreamFileExplorerAvailability.isEnabled {
+          Button("Toggle Files Inspector", systemImage: "list.bullet") {
+            toggleInspectorPaneAction?(.files)
+          }
+          .appKeyboardShortcut(toggleFilesInspector)
+          .help("Toggle Files Inspector (\(toggleFilesInspector?.display ?? "none"))")
+          .disabled(toggleInspectorPaneAction?.isEnabled != true)
         }
-        .appKeyboardShortcut(toggleFilesInspector)
-        .help("Toggle Files Inspector (\(toggleFilesInspector?.display ?? "none"))")
-        .disabled(toggleInspectorPaneAction?.isEnabled != true)
         Button("Toggle Notifications Inspector", systemImage: "bell") {
           toggleInspectorPaneAction?(.notifications)
         }

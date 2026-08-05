@@ -48,6 +48,16 @@ final class FileExplorerModel {
     startWatching()
   }
 
+  /// Mirror the viewer's open file in the highlighted row. The highlight means
+  /// "this is what the viewer is showing", so it follows the viewer rather than the
+  /// last click: closing the viewer passes `nil` and clears it, instead of leaving a
+  /// row highlighted with nothing behind it.
+  func syncSelection(toOpenFile url: URL?) {
+    let standardized = url?.standardizedFileURL
+    guard selectedURL != standardized else { return }
+    selectedURL = standardized
+  }
+
   /// Re-root the tree at a new directory (the terminal `cd`'d into it). Expansion,
   /// selection, and cached listings belong to the previous root, so they reset;
   /// the FSEvents watcher restarts on the new directory.

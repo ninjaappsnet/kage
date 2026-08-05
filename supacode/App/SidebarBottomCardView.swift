@@ -58,9 +58,11 @@ struct SidebarBottomCardView: View {
     let remoteRepositoriesBetaMode = RemoteRepositoriesBetaCardView.resolveMode(
       dismissedAt: remoteRepositoriesBetaDismissedAt
     )
-    let fileExplorerBetaMode = FileExplorerBetaCardView.resolveMode(
-      dismissedAt: fileExplorerBetaDismissedAt
-    )
+    // Announcing a feature this fork keeps unreachable would just confuse people.
+    let fileExplorerBetaMode =
+      UpstreamFileExplorerAvailability.isEnabled
+      ? FileExplorerBetaCardView.resolveMode(dismissedAt: fileExplorerBetaDismissedAt)
+      : .hidden
     let highlightMode = HighlightRelevantOnboardingCardView.resolveMode(
       groupPinnedRows: groupPinnedRows,
       groupActiveRows: groupActiveRows,

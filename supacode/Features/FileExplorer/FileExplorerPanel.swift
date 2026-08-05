@@ -12,6 +12,9 @@ import SwiftUI
 /// changes, while `rootURL` changes within a worktree re-root in place.
 struct FileExplorerPanel: View {
   private let rootURL: URL
+  /// What the viewer currently has open; `nil` once it closes. The highlighted row
+  /// mirrors this, so closing the viewer clears the highlight.
+  private let openFileURL: URL?
   private let onClose: () -> Void
   @State private var model: FileExplorerModel
   @State private var width: CGFloat = 260
@@ -21,8 +24,14 @@ struct FileExplorerPanel: View {
   private static let minWidth: CGFloat = 180
   private static let maxWidth: CGFloat = 520
 
-  init(rootURL: URL, onOpenFile: ((URL) -> Void)? = nil, onClose: @escaping () -> Void) {
+  init(
+    rootURL: URL,
+    openFileURL: URL? = nil,
+    onOpenFile: ((URL) -> Void)? = nil,
+    onClose: @escaping () -> Void
+  ) {
     self.rootURL = rootURL
+    self.openFileURL = openFileURL
     self.onClose = onClose
     let model = FileExplorerModel(rootURL: rootURL)
     model.onOpenFile = onOpenFile
@@ -38,6 +47,9 @@ struct FileExplorerPanel: View {
       resizeHandle
     }
     .onAppear { width = Self.clamp(CGFloat(storedWidth)) }
+    .onChange(of: openFileURL, initial: true) { _, openFile in
+      model.syncSelection(toOpenFile: openFile)
+    }
     .onChange(of: rootURL) { _, newRoot in
       model.updateRoot(newRoot)
     }

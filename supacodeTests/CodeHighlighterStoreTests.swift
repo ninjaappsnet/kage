@@ -19,7 +19,7 @@ struct CodeHighlighterStoreTests {
         }
       }
       var succeeded = 0
-      for await ok in group where ok { succeeded += 1 }
+      for await highlighted in group where highlighted { succeeded += 1 }
       // The point is surviving the concurrency; highlighting itself must still work.
       #expect(succeeded == 64)
     }

@@ -20,6 +20,45 @@ struct WorktreeDetailView: View {
 
   private var agentBadgesEnabled: Bool { settingsFile.global.agentPresenceBadgesEnabled }
 
+  /// Extracted so `detailBody` stays inside the function-length limit: this fork
+  /// passes two extra arguments (the file explorer toggle) that upstream does not,
+  /// which tipped the body over. Also keeps those fork-only arguments in one place.
+  /// WorktreeDetailToolbar itself has 16 stored properties; this helper only
+  /// forwards them, so the parameter count is inherent rather than a design smell.
+  @ToolbarContentBuilder
+  // swiftlint:disable:next function_parameter_count
+  private func detailToolbar(
+    repositoriesStore: StoreOf<RepositoriesFeature>,
+    scheme: ColorScheme,
+    showsToolbarPlaceholder: Bool,
+    showsLoadingWorktree: Bool,
+    hasActiveWorktree: Bool,
+    selectedWorktree: Worktree?,
+    selectedRow: SelectedWorktreeSlice?,
+    repositories: RepositoriesFeature.State,
+    inspectorPane: WorktreeInspectorPane,
+    inspectorPresented: Bool
+  ) -> some ToolbarContent {
+    WorktreeDetailToolbar(
+      store: store,
+      terminalManager: terminalManager,
+      repositoriesStore: repositoriesStore,
+      scheme: scheme,
+      showsToolbarPlaceholder: showsToolbarPlaceholder,
+      showsLoadingWorktree: showsLoadingWorktree,
+      hasActiveWorktree: hasActiveWorktree,
+      selectedWorktree: selectedWorktree,
+      selectedRow: selectedRow,
+      repositories: repositories,
+      hideSubtitleOnMatch: hideSubtitleOnMatch,
+      isFileExplorerVisible: isFileExplorerVisible,
+      onToggleFileExplorer: toggleFileExplorer,
+      inspectorPane: inspectorPane,
+      inspectorPresented: inspectorPresented,
+      onSelectNotification: selectToolbarNotification
+    )
+  }
+
   /// Flip the file explorer panel, animating the dock in/out. Mutating the
   /// `@Shared` here (rather than via the store) matches the sidebar-visibility
   /// toggle in `ContentView`; the panel is view-local UI, not app state.
@@ -101,9 +140,7 @@ struct WorktreeDetailView: View {
     .toolbar(removing: .title)
     .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     .toolbar {
-      WorktreeDetailToolbar(
-        store: store,
-        terminalManager: terminalManager,
+      detailToolbar(
         repositoriesStore: repositoriesStore,
         scheme: toolbarScheme,
         showsToolbarPlaceholder: showsToolbarPlaceholder,
@@ -112,12 +149,8 @@ struct WorktreeDetailView: View {
         selectedWorktree: selectedWorktree,
         selectedRow: selectedRow,
         repositories: repositories,
-        hideSubtitleOnMatch: hideSubtitleOnMatch,
-        isFileExplorerVisible: isFileExplorerVisible,
-        onToggleFileExplorer: toggleFileExplorer,
         inspectorPane: inspectorPane,
-        inspectorPresented: inspectorPresented,
-        onSelectNotification: selectToolbarNotification
+        inspectorPresented: inspectorPresented
       )
     }
     .inspector(
@@ -321,6 +354,7 @@ struct WorktreeDetailView: View {
           if isFileExplorerVisible, let fallbackRoot = selectedWorktree.localWorkingDirectory {
             FileExplorerPanel(
               rootURL: terminalManager.focusedSurfacePwd(for: selectedWorktree.id) ?? fallbackRoot,
+              openFileURL: fileViewer.fileURL,
               onOpenFile: { fileViewer.open($0) },
               onClose: toggleFileExplorer
             )
@@ -853,12 +887,14 @@ struct WorktreeDetailView: View {
         // full-opacity tint reads as a stark solid pill against the glass.
         let chromeForeground = terminalManager.chromeOverlayTint()
         let chromeTint = chromeForeground.opacity(0.2)
-        WorktreeFilesToolbarButton(
-          isSelected: inspectorPresented && inspectorPane == .files,
-          tint: chromeTint,
-          foreground: chromeForeground,
-          onActivate: { onActivateInspector(.files) }
-        )
+        if UpstreamFileExplorerAvailability.isEnabled {
+          WorktreeFilesToolbarButton(
+            isSelected: inspectorPresented && inspectorPane == .files,
+            tint: chromeTint,
+            foreground: chromeForeground,
+            onActivate: { onActivateInspector(.files) }
+          )
+        }
         WorktreeGitStatusButton(
           pullRequest: pullRequest,
           isSelected: inspectorPresented && inspectorPane == .git,
