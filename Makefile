@@ -46,7 +46,7 @@ TEST_RESULT_BUNDLE := build/supacode-tests.xcresult
 SELECT_DEVELOPER_DIR = DEVELOPER_DIR="$$(./scripts/select-developer-dir.sh)"; export DEVELOPER_DIR
 
 .DEFAULT_GOAL := help
-.PHONY: doctor preflight build-ghostty-xcframework build-zmx generate-project generate-project-sources inspect-dependencies warm-cache build-app run-app install-dev-build archive export-archive format lint check test bump-version bump-and-release log-stream
+.PHONY: doctor preflight build-ghostty-xcframework build-zmx generate-project generate-project-sources inspect-dependencies warm-cache build-app run-app install-dev-build archive export-archive format lint check rebrand-check rebrand-fix test bump-version bump-and-release log-stream
 
 ifdef CI
 TUIST_INSTALL_FLAGS := --force-resolved-versions
@@ -163,6 +163,12 @@ lint: # Lint code with swiftlint
 	mise exec -- swiftlint lint --quiet --config .swiftlint.yml
 
 check: format lint # Format and lint
+
+rebrand-check: # Report user-facing "Supacode" strings that should say "Kage" (run after an upstream sync)
+	@./scripts/rebrand-strings.sh
+
+rebrand-fix: # Rewrite user-facing "Supacode" strings to "Kage"
+	@./scripts/rebrand-strings.sh --fix
 
 log-stream: # Stream logs from the app via log stream
 	log stream --predicate 'subsystem == "net.ninjaapps.kage"' --style compact --color always

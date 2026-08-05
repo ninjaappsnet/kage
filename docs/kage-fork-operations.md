@@ -35,6 +35,49 @@ assets, making re-runs idempotent. Patch bumps need nothing extra; minor and
 major require a `## title` + blank line + body headline that rides the tag into
 both the release notes and the Sparkle appcast.
 
+## After an upstream sync: re-run the rebrand sweep
+
+Upstream writes its own name into user-facing copy — alert bodies, settings
+descriptions, error messages, onboarding cards. This fork renames those to Kage,
+which means every upstream edit to one of those lines conflicts on sync. That is
+accepted, and it is cheap, because resolving is mechanical:
+
+```sh
+make rebrand-check   # report anything still saying Supacode; exits 1 if so
+make rebrand-fix     # rewrite it
+```
+
+Take **upstream's** side on any such conflict, then re-run `make rebrand-fix`.
+The script is idempotent, so running it on a clean tree is a no-op, and it also
+catches copy upstream *added* since the last sync — which a conflict never
+surfaces, because a new line does not conflict with anything.
+
+`scripts/rebrand-strings.sh` renames the standalone word `Supacode` only inside
+double-quoted regions of a line, so comments and identifiers (`SupacodePaths`,
+`SupacodeSettingsShared`, the `supacode` CLI name, `supacode://`, `~/.supacode`
+paths) are structurally out of reach. Two lists at the top of the script carry
+what that rule cannot infer, and both are meant to grow:
+
+- `GUARDED_LITERALS` — strings that carry the old name as an identifier rather
+  than as prose. Currently the `Supacode Light` / `Supacode Dark` theme
+  filenames, which are looked up in the bundle by name.
+- `EXCLUDED_FILES` — the `*Content.swift` agent-integration templates. Their
+  installers decide "is this file still managed by us" by comparing the file on
+  disk against the template byte for byte, so editing even a comment inside one
+  marks every already-installed user as outdated.
+
+If upstream adds a resource name, persisted raw value, or on-disk template that
+contains `Supacode`, add it to the right list in the same commit. Review the
+`rebrand-fix` diff before committing; it is the only check on those lists being
+complete.
+
+`supacodeTests/` is deliberately **not** swept. Most of its `Supacode` mentions
+are fixtures the rename would corrupt — fake `/Applications/Supacode.app` paths,
+`Supacode.xcodeproj` filenames, a `NotSupacode` negative case, and an assertion
+on the contents of one of the excluded templates. The handful of assertions that
+mirror renamed product copy therefore fail after a sweep, which is the intended
+signal: run `make test` after `make rebrand-fix` and update whatever it names.
+
 ## Signing the bump commit
 
 `scripts/bump-version.sh` uses `git commit -S` and `git tag -s`. Git builds the
