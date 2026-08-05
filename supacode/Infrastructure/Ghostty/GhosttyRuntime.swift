@@ -630,8 +630,8 @@ final class GhosttyRuntime {
       let lightPath = Bundle.main.path(forResource: "Supacode Light", ofType: nil),
       let darkPath = Bundle.main.path(forResource: "Supacode Dark", ofType: nil)
     else {
-      assertionFailure("Bundled Supacode themes missing from app bundle.")
-      logger.warning("Bundled Supacode themes missing from app bundle.")
+      assertionFailure("Bundled Kage themes missing from app bundle.")
+      logger.warning("Bundled Kage themes missing from app bundle.")
       return
     }
     let contents = """

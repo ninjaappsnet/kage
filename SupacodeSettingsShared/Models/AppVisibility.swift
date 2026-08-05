@@ -18,9 +18,9 @@ public enum AppVisibility: String, CaseIterable, Identifiable, Codable, Sendable
 
   public var help: String {
     switch self {
-    case .dock: "Show Supacode in the Dock only."
-    case .menuBar: "Show Supacode in the menu bar only, with no Dock icon."
-    case .dockAndMenuBar: "Show Supacode in both the Dock and the menu bar."
+    case .dock: "Show Kage in the Dock only."
+    case .menuBar: "Show Kage in the menu bar only, with no Dock icon."
+    case .dockAndMenuBar: "Show Kage in both the Dock and the menu bar."
     }
   }
 

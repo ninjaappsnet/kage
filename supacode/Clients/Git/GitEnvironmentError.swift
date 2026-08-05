@@ -58,11 +58,11 @@ extension GitEnvironmentError {
   var message: String {
     switch self {
     case .xcodeLicenseNotAccepted:
-      "Supacode relies on git, which macOS blocks until you accept the Xcode license. "
-        + "Run the command below in Terminal, then relaunch Supacode."
+      "Kage relies on git, which macOS blocks until you accept the Xcode license. "
+        + "Run the command below in Terminal, then relaunch Kage."
     case .developerToolsUnavailable:
-      "Supacode relies on git, which needs Xcode's command line tools. "
-        + "Run the command below in Terminal, then relaunch Supacode."
+      "Kage relies on git, which needs Xcode's command line tools. "
+        + "Run the command below in Terminal, then relaunch Kage."
     }
   }
 

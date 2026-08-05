@@ -115,7 +115,7 @@ nonisolated enum OmpSettingsInstallerError: Error, Equatable, LocalizedError {
   var errorDescription: String? {
     switch self {
     case .extensionNotManaged:
-      "The OMP extension at ~/.omp/agent/extensions/supacode is not managed by Supacode."
+      "The OMP extension at ~/.omp/agent/extensions/supacode is not managed by Kage."
     }
   }
 }

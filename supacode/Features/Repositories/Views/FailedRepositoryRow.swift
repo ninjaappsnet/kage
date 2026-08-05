@@ -79,7 +79,7 @@ struct EnvironmentBlockedRepositoryRow: View {
         role: .destructive,
         action: removeRepository
       )
-      .help("Remove this repository from Supacode. Files on disk are untouched.")
+      .help("Remove this repository from Kage. Files on disk are untouched.")
     }
   }
 }

@@ -13,7 +13,7 @@ struct NotificationSoundTests {
 
   @Test func displayNamesAreUnambiguous() {
     #expect(NotificationSound.never.displayName == "Never")
-    #expect(NotificationSound.supacodeClassic.displayName == "Supacode Classic")
+    #expect(NotificationSound.supacodeClassic.displayName == "Kage Classic")
     #expect(NotificationSound.funk.displayName == "Funk")
   }
 

@@ -95,9 +95,9 @@ nonisolated enum GrokSettingsInstallerError: Error, Equatable, LocalizedError {
     case .invalidHooksObject:
       "Grok hooks use an unsupported shape."
     case .invalidJSON(let detail):
-      "Grok hooks must be valid JSON before Supacode can install hooks (\(detail))."
+      "Grok hooks must be valid JSON before Kage can install hooks (\(detail))."
     case .invalidRootObject:
-      "Grok hooks must be a JSON object before Supacode can install hooks."
+      "Grok hooks must be a JSON object before Kage can install hooks."
     }
   }
 }

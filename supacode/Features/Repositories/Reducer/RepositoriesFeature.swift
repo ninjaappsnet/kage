@@ -1087,9 +1087,9 @@ struct RepositoriesFeature {
             } else if localCount == count {
               "move them to the Trash"
             } else if localCount == 1 {
-              "move the local folder to the Trash (remote folders are only removed from Supacode)"
+              "move the local folder to the Trash (remote folders are only removed from Kage)"
             } else {
-              "move the local folders to the Trash (remote folders are only removed from Supacode)"
+              "move the local folders to the Trash (remote folders are only removed from Kage)"
             }
           state.alert = AlertState {
             TextState(title)

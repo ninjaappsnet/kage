@@ -95,7 +95,7 @@ public nonisolated enum AgentIntegrationError: Error, LocalizedError, Equatable 
   public var errorDescription: String? {
     switch self {
     case .notInstalled(let agent):
-      "\(agent.displayName) isn't installed yet. Install \(agent.displayName), then add its Supacode integration."
+      "\(agent.displayName) isn't installed yet. Install \(agent.displayName), then add its Kage integration."
     }
   }
 }

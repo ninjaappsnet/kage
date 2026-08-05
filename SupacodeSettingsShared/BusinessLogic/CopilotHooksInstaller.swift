@@ -73,7 +73,7 @@ nonisolated enum CopilotHooksInstallerError: Error, Equatable, LocalizedError {
   var errorDescription: String? {
     switch self {
     case .fileNotManaged:
-      "The Copilot hook file at ~/.copilot/hooks/supacode.json is not managed by Supacode."
+      "The Copilot hook file at ~/.copilot/hooks/supacode.json is not managed by Kage."
     case .encodingFailed:
       "Failed to encode the Copilot hook payload."
     }

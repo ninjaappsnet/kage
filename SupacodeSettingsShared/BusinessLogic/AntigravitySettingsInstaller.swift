@@ -332,9 +332,9 @@ nonisolated enum AntigravitySettingsInstallerError: Error, Equatable, LocalizedE
     case .invalidHooksObject:
       "Antigravity settings use an unsupported hooks shape."
     case .invalidJSON(let detail):
-      "Antigravity settings must be valid JSON before Supacode can install hooks (\(detail))."
+      "Antigravity settings must be valid JSON before Kage can install hooks (\(detail))."
     case .invalidRootObject:
-      "Antigravity settings must be a JSON object before Supacode can install hooks."
+      "Antigravity settings must be a JSON object before Kage can install hooks."
     }
   }
 }

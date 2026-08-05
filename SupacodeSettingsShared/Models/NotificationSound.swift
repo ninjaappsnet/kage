@@ -85,7 +85,7 @@ public enum NotificationSound: String, CaseIterable, Identifiable, Codable, Send
     case .never:
       return "Never"
     case .supacodeClassic:
-      return "Supacode Classic"
+      return "Kage Classic"
     default:
       if case .system(let name)? = source { return name }
       return rawValue.capitalized

@@ -203,7 +203,7 @@ extension RepositoriesFeature {
         rootID: repoID,
         message:
           "Connected to \(host.sshDestination) but couldn't list worktrees for "
-          + "\(remotePath). Supacode will retry."
+          + "\(remotePath). Kage will retry."
       )
       return (remotePlaceholderRepository(host: host, remotePath: remotePath, repoID: repoID), failure)
     case .git:

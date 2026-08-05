@@ -332,21 +332,21 @@ nonisolated enum CodexSettingsInstallerError: Error, Equatable, LocalizedError {
   var errorDescription: String? {
     switch self {
     case .codexUnavailable:
-      "Codex must be installed and available in your login shell before Supacode can install hooks."
+      "Codex must be installed and available in your login shell before Kage can install hooks."
     case .enableHooksTimedOut:
       "Codex did not respond while enabling hooks. Check that your shell startup files aren't blocking, then retry."
     case .enableHooksFailed(let details):
       details.isEmpty
-        ? "Supacode could not enable the Codex hooks feature."
-        : "Supacode could not enable the Codex hooks feature: \(details)"
+        ? "Kage could not enable the Codex hooks feature."
+        : "Kage could not enable the Codex hooks feature: \(details)"
     case .invalidEventHooks(let event):
       "Codex hooks use an unsupported shape for \(event)."
     case .invalidHooksObject:
       "Codex hooks use an unsupported shape."
     case .invalidJSON(let detail):
-      "Codex hooks must be valid JSON before Supacode can install hooks (\(detail))."
+      "Codex hooks must be valid JSON before Kage can install hooks (\(detail))."
     case .invalidRootObject:
-      "Codex hooks must be a JSON object before Supacode can install hooks."
+      "Codex hooks must be a JSON object before Kage can install hooks."
     }
   }
 }

@@ -642,7 +642,7 @@ nonisolated enum ZmxAttach {
   /// (Unix-socket agent hooks, worktree HEAD watching) are unavailable, so
   /// the user gets an up-front heads-up.
   static let betaBanner =
-    #"printf '\033[2m── Remote Supacode surfaces are in \033[0m\033[1mBeta\033[0m\033[2m "#
+    #"printf '\033[2m── Remote Kage surfaces are in \033[0m\033[1mBeta\033[0m\033[2m "#
     + #"and may have reduced functionality. ──\033[0m\r\n'; "#
 
   /// Dim banner for a host-persisted surface, with a bold "persisted" and the

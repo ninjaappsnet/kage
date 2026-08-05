@@ -52,7 +52,7 @@ public struct AppearanceSettingsView: View {
           .padding(.leading, 16)
         } label: {
           Text("Visibility")
-          Text("Show Supacode in the Dock, the menu bar, or both.")
+          Text("Show Kage in the Dock, the menu bar, or both.")
         }
       }
       Section("Persistence") {

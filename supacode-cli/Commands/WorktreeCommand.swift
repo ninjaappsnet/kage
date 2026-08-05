@@ -78,7 +78,7 @@ extension WorktreeCommand {
     }
 
     static let staleAppMessage =
-      "The running Supacode app does not report worktree status. Restart Supacode to pick up the update."
+      "The running Kage app does not report worktree status. Restart Kage to pick up the update."
 
     static func requestedStatuses(_ value: String?) throws -> Set<WorktreeStatus> {
       guard let value else { return [] }

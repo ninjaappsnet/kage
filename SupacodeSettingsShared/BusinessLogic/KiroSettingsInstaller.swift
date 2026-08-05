@@ -297,11 +297,11 @@ nonisolated enum KiroSettingsInstallerError: Error, Equatable, LocalizedError {
     case .invalidHooksObject:
       "Kiro agent config uses an unsupported hooks shape."
     case .invalidJSON(let detail):
-      "Kiro agent config must be valid JSON before Supacode can install hooks (\(detail))."
+      "Kiro agent config must be valid JSON before Kage can install hooks (\(detail))."
     case .invalidRootObject:
-      "Kiro agent config must be a JSON object before Supacode can install hooks."
+      "Kiro agent config must be a JSON object before Kage can install hooks."
     case .kiroUnavailable:
-      "Kiro must be installed and available in your login shell before Supacode can install hooks."
+      "Kiro must be installed and available in your login shell before Kage can install hooks."
     case .kiroVersionCheckTimedOut:
       "Kiro did not respond to the version check. Check that your shell startup files aren't blocking, then retry."
     case .unsupportedKiroVersion(let detected):

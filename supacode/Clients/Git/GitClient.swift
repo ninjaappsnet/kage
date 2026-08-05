@@ -270,13 +270,13 @@ struct GitClient {
         let name = entry.worktreeDirectory.lastPathComponent
         switch Self.removeSupacodeLock(at: entry.adminDirectory) {
         case .removed:
-          gitLogger.info("Released Supacode lock on broken worktree \(name)")
+          gitLogger.info("Released Kage lock on broken worktree \(name)")
         case .keptForeignLock:
           // A user `git worktree lock --reason` orphan is never reclaimed here, so
           // flag it rather than let the prune silently skip it.
           gitLogger.warning("Broken worktree \(name) keeps a user lock; prune cannot reclaim it")
         case .failed(let error):
-          gitLogger.warning("Failed to release Supacode lock on broken worktree \(name): \(error)")
+          gitLogger.warning("Failed to release Kage lock on broken worktree \(name): \(error)")
         case .notPresent:
           break
         }
@@ -286,7 +286,7 @@ struct GitClient {
       guard exists else { continue }
       Self.writeSupacodeLock(at: entry.adminDirectory)
       gitLogger.info(
-        "Backfilled Supacode lock for worktree \(entry.worktreeDirectory.lastPathComponent)"
+        "Backfilled Kage lock for worktree \(entry.worktreeDirectory.lastPathComponent)"
       )
     }
     do {

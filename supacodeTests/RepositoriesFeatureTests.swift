@@ -9274,7 +9274,7 @@ struct RepositoriesFeatureTests {
           "Remove mixed-alert-local, notes? Choose \"Remove from Kage\" to stop "
             + "managing the folders (they stay on disk)"
             + ", or \"Delete from disk\" to move the local folder to the Trash "
-            + "(remote folders are only removed from Supacode)."
+            + "(remote folders are only removed from Kage)."
         )
       }
     }

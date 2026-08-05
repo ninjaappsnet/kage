@@ -41,7 +41,7 @@ public struct RepositoryScriptsSettingsView: View {
           title: "Delete Script",
           subtitle: store.isGitRepository
             ? "Runs before a worktree is deleted."
-            : "Runs before this folder is removed from Supacode.",
+            : "Runs before this folder is removed from Kage.",
           icon: "trash",
           iconColor: .red,
           footerExample: "docker compose down"

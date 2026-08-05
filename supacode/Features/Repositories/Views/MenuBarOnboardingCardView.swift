@@ -43,7 +43,7 @@ private struct MenuBarOnboardingCardBody: View {
       onDismiss: { $dismissedAt.withLock { $0 = .now } },
       content: {
         VStack(alignment: .leading, spacing: 4) {
-          SidebarCardLabel(title: "Supacode in the menu bar", description: description)
+          SidebarCardLabel(title: "Kage in the menu bar", description: description)
           Text("Turn off in Settings → General")
             .font(.caption2)
             .foregroundStyle(.tertiary)
