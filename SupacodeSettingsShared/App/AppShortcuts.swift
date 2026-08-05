@@ -590,20 +590,26 @@ public enum AppShortcuts {
     from overrides: [AppShortcutID: AppShortcutOverride]
   ) -> [AppShortcutID: String] {
     let reserved = AppShortcutOverride.allReservedDisplayStrings()
-    var displayToIDs: [String: [AppShortcutID]] = [:]
+    // Keyed on the binding itself, not on `display`. A display string is produced by
+    // UCKeyTranslate against the *active keyboard layout*, so on a non-US layout two
+    // different bindings can render to the same characters — which reported ⌥⌘F as
+    // clashing with ⌥⌘N and made this depend on whoever's machine ran it.
+    var bindingToIDs: [String: [AppShortcutID]] = [:]
     var warnings: [AppShortcutID: String] = [:]
 
     for shortcut in all {
       guard let effective = shortcut.effective(from: overrides) else { continue }
       let display = effective.display
-      displayToIDs[display, default: []].append(shortcut.id)
+      let binding =
+        "\(String(effective.keyEquivalent.character).lowercased())|\(effective.modifiers.rawValue)"
+      bindingToIDs[binding, default: []].append(shortcut.id)
 
       if reserved.contains(display) {
         warnings[shortcut.id] = "\(display) is reserved by the system."
       }
     }
 
-    for (_, ids) in displayToIDs where ids.count > 1 {
+    for (_, ids) in bindingToIDs where ids.count > 1 {
       for id in ids {
         let others = ids.filter { $0 != id }
         let otherLabels = others.compactMap { otherID in

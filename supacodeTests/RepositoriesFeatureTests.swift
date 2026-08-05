@@ -9258,7 +9258,7 @@ struct RepositoriesFeatureTests {
         ButtonState(
           action: .confirmDeleteSidebarItems(targets, disposition: .folderUnlink)
         ) {
-          TextState("Remove from Supacode")
+          TextState("Remove from Kage")
         }
         ButtonState(
           role: .destructive,
@@ -9271,7 +9271,7 @@ struct RepositoriesFeatureTests {
         }
       } message: {
         TextState(
-          "Remove mixed-alert-local, notes? Choose \"Remove from Supacode\" to stop "
+          "Remove mixed-alert-local, notes? Choose \"Remove from Kage\" to stop "
             + "managing the folders (they stay on disk)"
             + ", or \"Delete from disk\" to move the local folder to the Trash "
             + "(remote folders are only removed from Supacode)."
@@ -9305,7 +9305,7 @@ struct RepositoriesFeatureTests {
         ButtonState(
           action: .confirmDeleteSidebarItems([target], disposition: .folderUnlink)
         ) {
-          TextState("Remove from Supacode")
+          TextState("Remove from Kage")
         }
         ButtonState(role: .cancel) {
           TextState("Cancel")
