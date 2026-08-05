@@ -1,4 +1,4 @@
-# Supacode
+# Kage
 
 **A native macOS command center for running coding agents in parallel.**
 
@@ -6,9 +6,47 @@ Run several coding agents side by side from one window: each task gets its own g
 its own real terminal. Sessions persist in the background, so quitting the app or dropping an SSH
 connection loses nothing.
 
-[supacode.sh](https://supacode.sh)
+Kage is a fork of [Supacode](https://github.com/supabitapp/supacode) by
+[supabit](https://supacode.sh). Everything Supacode does, Kage does — this fork tracks upstream
+closely and adds a docked file explorer and viewer, sidebar workspaces, and no telemetry. Credit
+for the app and the great majority of its code belongs upstream.
 
-<img width="3180" height="1788" alt="Supacode screenshot" src="https://github.com/user-attachments/assets/72a8dc95-020a-4dc2-9010-ba1adc9518ba" />
+## Install
+
+Download the latest `.dmg` from [Releases](https://github.com/ninjaappsnet/kage/releases) and drag
+Kage to `/Applications`. Builds are signed and notarized. Sparkle keeps the app up to date on one
+of two channels, selectable in Settings → Updates:
+
+- **Stable** — tagged releases.
+- **Tip** — a nightly pre-release cut from `main`.
+
+Or build from source; see [Quick start](#quick-start).
+
+## What this fork adds
+
+### File explorer and file viewer
+
+A docked file tree for the selected worktree, toggled with **⌥⌘E** (View → Toggle File Explorer).
+It re-roots itself to the focused terminal's working directory, so `cd` in the terminal moves the
+tree with you, and it refreshes live as files change on disk.
+
+Clicking a file opens it in an adjacent viewer pane that is a real editor, not a preview: text
+files get syntax highlighting, native find, and ⌘S to save, with an unsaved-changes indicator,
+reload-from-disk, and a banner when the file changes underneath you. Markdown and HTML render, with
+a Rendered / Raw toggle to drop into the source. Images and PDFs get read-only previews; anything
+binary or oversized offers **Open in Default App**. Close the pane with **Esc**.
+
+### Sidebar workspaces
+
+A workspace is a named filter over your projects. Assign repos and folders to one from the section
+menu (**Move to Workspace**), then switch with the picker above the sidebar to hide everything else.
+**All Projects** is the default and filters nothing. Each workspace remembers its own last
+selection, and a repo added while a filter is active joins that workspace automatically.
+
+### No telemetry
+
+The analytics and crash-reporting SDKs are unlinked in this fork. Kage phones home only for Sparkle
+update checks, and only to this repository's appcast.
 
 ## Features
 
@@ -28,8 +66,8 @@ included. On by default; a quit option tears everything down when you want a cle
 
 ### Remote SSH repositories (Beta)
 
-Point Supacode at a repository on a remote host over SSH and it manages that repo's worktrees
-like a local one. Every git probe and the terminal share one multiplexed SSH connection, so you
+Point Kage at a repository on a remote host over SSH and it manages that repo's worktrees like a
+local one. Every git probe and the terminal share one multiplexed SSH connection, so you
 authenticate (or touch your security key) once. When the host has zmx, remote sessions survive
 dropped connections and laptop sleep: the connection retries and reattaches instead of
 restarting. Beta, with some local-only features reduced.
@@ -42,7 +80,7 @@ minus the git-only tools. You can also clone a remote URL straight into a folder
 
 ### Coding agent presence
 
-Supacode detects the agent in each pane and shows a live badge: busy, awaiting input, or idle. It
+Kage detects the agent in each pane and shows a live badge: busy, awaiting input, or idle. It
 supports the common agents (Claude, Codex, Copilot) through hooks it installs, works locally and
 over SSH, and drives notifications so you know the moment an agent needs you.
 
@@ -51,7 +89,8 @@ over SSH, and drives notifications so you know the moment an agent needs you.
 Drive the app from any terminal, script, or other tool. The `supacode` CLI manages worktrees,
 tabs, splits, and repos, and every session exports its repo, worktree, tab, and surface IDs, so
 commands default to the session you run them in. Deeplinks (`supacode://...`) mirror the CLI, so
-you can bind an action to a hotkey or fire it from another app.
+you can bind an action to a hotkey or fire it from another app. The CLI name and URL scheme are
+deliberately unchanged from upstream, so existing scripts and hooks keep working.
 
 ### More
 
@@ -78,8 +117,8 @@ you can bind an action to a hotkey or fire it from another app.
 ## Quick start
 
 ```bash
-git clone --recursive git@github.com:supabitapp/supacode.git
-cd supacode
+git clone --recursive git@github.com:ninjaappsnet/kage.git
+cd kage
 mise install
 make doctor    # check every build prerequisite and print fixes for anything missing
 make run-app   # build and launch the Debug app
@@ -88,6 +127,9 @@ make run-app   # build and launch the Debug app
 `make doctor` verifies mise, submodules, a Zig-linkable Xcode, the Metal Toolchain, and the
 pinned tools, and prints the exact command to fix anything that is missing. The build targets
 run it automatically as a quiet preflight.
+
+The Xcode project, target, and source directories are still named `supacode`; only the product is
+branded Kage. Renaming them would conflict with every upstream merge.
 
 ## Building
 
@@ -113,7 +155,9 @@ sudo DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer xcodebuild -r
 sudo DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer xcodebuild -downloadComponent MetalToolchain
 ```
 
-See [AGENTS.md](AGENTS.md) for the full rationale and the rest of the architecture.
+See [AGENTS.md](AGENTS.md) for the full rationale and the rest of the architecture, and
+[docs/kage-fork-operations.md](docs/kage-fork-operations.md) for this fork's release, CI, and
+signing setup.
 
 ## Development
 
@@ -129,6 +173,17 @@ make format  # swift-format only
 - [libghostty](https://github.com/ghostty-org/ghostty)
 - [zmx](https://zmx.sh) for session persistence
 
+## Relationship to upstream
+
+This fork syncs from `supabitapp/supacode` regularly and aims to stay mergeable rather than
+diverge. Fork changes are written to minimize conflict surface: new features live in their own
+files, and integration into upstream files is kept to thin, appended edits. The rules are in
+[AGENTS.md](AGENTS.md#minimizing-upstream-merge-conflicts).
+
+If you hit a bug that is not specific to the features listed under
+[What this fork adds](#what-this-fork-adds), it is most likely an upstream bug — report it
+upstream, where it will help everyone.
+
 ## Contributing
 
 Contributions are reviewed personally, line by line, and a clear issue is worth more than a
@@ -142,4 +197,5 @@ agent) is the accountable author, is in the [Contributing guide](CONTRIBUTING.md
 
 ## License
 
-See [LICENSE](LICENSE).
+Functional Source License 1.1 with an Apache 2.0 future license, inherited unchanged from
+upstream. See [LICENSE](LICENSE).
