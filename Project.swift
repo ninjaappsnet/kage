@@ -15,7 +15,7 @@ func shellScript(_ path: Path) -> String {
 }
 
 let ghosttyFingerprintInputScript = """
-"${SRCROOT}/\(ghosttyBuildScriptPath.pathString)" --print-fingerprint
+"./\(ghosttyBuildScriptPath.pathString)" --print-fingerprint
 """
 
 let appResources: ResourceFileElements = [
