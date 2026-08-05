@@ -3,6 +3,22 @@ name: main
 on:
   push:
     branches: [main]
+    # A nightly should represent a change to the app, not to the machinery around
+    # it. A push touching only these paths produces no build and no tip refresh —
+    # on this fork every run costs a full Release archive plus two notarization
+    # round-trips on a single self-hosted Mac. A push that touches anything else
+    # still runs the whole pipeline, including any of these carried alongside it.
+    #
+    # Note this also means a change to the pipeline itself is not exercised by
+    # merging it. Validate those with workflow_dispatch below.
+    paths-ignore:
+      - ".github/**"
+      - ".claude/**"
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".editorconfig"
+      - ".gitattributes"
 
   workflow_dispatch: {}
 
