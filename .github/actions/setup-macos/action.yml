@@ -36,6 +36,15 @@ runs:
       # remote binary cache is an optimization; generation tolerates no auth via
       # Tuist.swift's optionalAuthentication. Don't fail the whole pipeline.
       run: mise exec -- tuist auth login || echo "no linked Tuist project; continuing without the remote cache"
+    # The self-hosted runners reuse their workspace between runs, so .build/ — and
+    # with it the Tuist generation stamp — survives. TUIST_GENERATION_INPUTS covers
+    # the manifests and supacodeTests/*.swift but not app sources under supacode/,
+    # and Tuist expands globs at generation time: a commit that adds app files leaves
+    # a stale .xcodeproj behind, which built and tested green here while failing on a
+    # clean checkout. Hosted runners never hit this because they start empty.
+    - name: Force a fresh Tuist generation
+      shell: bash
+      run: rm -rf .build/.tuist-generated-stamps
     - name: Xcode cache key
       shell: bash
       run: |
