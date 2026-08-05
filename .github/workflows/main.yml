@@ -323,7 +323,11 @@ jobs:
   # archive or notarization) and publishes them with auto-generated notes.
   publish-stable:
     runs-on: [self-hosted, macOS, ARM64]
-    needs: [build, detect]
+    # `test` is a gate, not just a signal: v0.11.0 shipped while the suite was red
+    # because this job only waited on build and detect. A stable release now
+    # requires green tests; the tip nightly deliberately does not, so a broken
+    # test still produces a build you can bisect against.
+    needs: [build, detect, test]
     if: ${{ needs.detect.outputs.release_tag != '' }}
     permissions:
       contents: write
