@@ -22,16 +22,18 @@ TO="Kage"
 
 SEARCH_DIRS=(supacode supacode-cli SupacodeSettingsFeature SupacodeSettingsShared)
 
-# Files whose "Supacode" mentions are NOT user-facing copy and must not move.
+# Paths whose "Supacode" mentions are NOT user-facing copy and must not move.
 #
 # The *Content.swift templates are written verbatim into the user's agent
 # config, and their installers decide "managed by us" by comparing the file on
 # disk against the template byte for byte — so editing a comment inside one
 # marks every already-installed user as outdated.
-EXCLUDED_FILES=(
-  SupacodeSettingsShared/BusinessLogic/OmpExtensionContent.swift
-  SupacodeSettingsShared/BusinessLogic/PiExtensionContent.swift
-  SupacodeSettingsShared/BusinessLogic/HermesPluginContent.swift
+#
+# Matched as globs, not names: upstream adds an agent template every few
+# releases, and a list that has to be extended by hand is a list that silently
+# goes stale.
+EXCLUDED_GLOBS=(
+  'SupacodeSettingsShared/BusinessLogic/*Content.swift'
 )
 
 # Literal strings that carry the old name as an identifier, not as prose:
@@ -68,32 +70,54 @@ BEGIN {
   $from   = $ENV{REBRAND_FROM};
   $to     = $ENV{REBRAND_TO};
   @guards = grep { length } split /\n/, ($ENV{REBRAND_GUARDS} // '');
+  # Perl runs once per file, so this starts false for each one.
+  $in_multi = 0;
 }
-# Split the line into quoted / unquoted runs and only rename inside the quoted
-# ones. \" and \\ are consumed as units so an escaped quote can't flip the state.
-my ($out, $in_quote, $i, $len) = ('', 0, 0, length $_);
-my $chunk = '';
-while ($i < $len) {
-  my $c = substr($_, $i, 1);
-  if ($in_quote && $c eq '\\' && $i + 1 < $len) {
-    $chunk .= substr($_, $i, 2);
-    $i += 2;
-    next;
+# A """ block spans lines, so its state has to outlive the line. Split the line
+# on """ delimiters and alternate: inside a block every character is literal
+# text, outside it only the double-quoted runs are. Onboarding-card copy lives
+# in """ blocks, so getting this wrong misses the most visible strings there are.
+my @parts = split /(""")/, $_, -1;
+my $out = '';
+for my $part (@parts) {
+  if ($part eq '"""') {
+    $out .= $part;
+    $in_multi = !$in_multi;
+  } elsif ($in_multi) {
+    $out .= rename_run($part);
+  } else {
+    $out .= scan_quoted($part);
   }
-  if ($c eq '"') {
-    $out .= $in_quote ? rename_run($chunk) : $chunk;
-    $chunk = '';
-    $out .= $c;
-    $in_quote = !$in_quote;
-    $i++;
-    next;
-  }
-  $chunk .= $c;
-  $i++;
 }
-# An unterminated run is a multi-line string's continuation: leave it alone.
-$out .= $in_quote ? $chunk : $chunk;
 $_ = $out;
+
+# Split a single line into quoted / unquoted runs and only rename inside the
+# quoted ones. \" and \\ are consumed as units so an escaped quote can't flip
+# the state. An unterminated run ends the line, so it is left alone.
+sub scan_quoted {
+  my ($line) = @_;
+  my ($out, $in_quote, $i, $len) = ('', 0, 0, length $line);
+  my $chunk = '';
+  while ($i < $len) {
+    my $c = substr($line, $i, 1);
+    if ($in_quote && $c eq '\\' && $i + 1 < $len) {
+      $chunk .= substr($line, $i, 2);
+      $i += 2;
+      next;
+    }
+    if ($c eq '"') {
+      $out .= $in_quote ? rename_run($chunk) : $chunk;
+      $chunk = '';
+      $out .= $c;
+      $in_quote = !$in_quote;
+      $i++;
+      next;
+    }
+    $chunk .= $c;
+    $i++;
+  }
+  return $out . $chunk;
+}
 
 sub rename_run {
   my ($s) = @_;
@@ -114,8 +138,9 @@ PERL
 files=()
 while IFS= read -r f; do
   skip=0
-  for excluded in "${EXCLUDED_FILES[@]}"; do
-    [ "$f" = "$excluded" ] && skip=1 && break
+  for glob in "${EXCLUDED_GLOBS[@]}"; do
+    # shellcheck disable=SC2053 -- unquoted RHS is the glob match, on purpose.
+    [[ $f == $glob ]] && skip=1 && break
   done
   [ "$skip" -eq 1 ] || files+=("$f")
 done < <(grep -rl "$FROM" --include='*.swift' "${SEARCH_DIRS[@]}" 2>/dev/null | sort)

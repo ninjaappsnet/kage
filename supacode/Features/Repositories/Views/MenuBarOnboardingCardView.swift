@@ -61,7 +61,7 @@ private struct MenuBarOnboardingCardBody: View {
 
   private var description: LocalizedStringKey {
     """
-    Supacode now lives in your menu bar, so notifications and worktrees stay one \
+    Kage now lives in your menu bar, so notifications and worktrees stay one \
     click away even when the window is closed.
     """
   }

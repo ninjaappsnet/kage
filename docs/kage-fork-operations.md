@@ -63,23 +63,31 @@ never on it. Discovery is now automatic and the judgment lives in two small
 exception lists instead.
 
 `scripts/rebrand-strings.sh` renames the standalone word `Supacode` only inside
-double-quoted regions of a line, so comments and identifiers (`SupacodePaths`,
+string literals — double-quoted runs on a line, plus `"""` blocks, whose state it
+tracks across lines. Comments and identifiers (`SupacodePaths`,
 `SupacodeSettingsShared`, the `supacode` CLI name, `supacode://`, `~/.supacode`
-paths) are structurally out of reach. Two lists at the top of the script carry
-what that rule cannot infer, and both are meant to grow:
+paths) are therefore structurally out of reach rather than blocklisted.
+
+The `"""` handling is not incidental: onboarding-card copy lives in `"""` blocks,
+so a line-local rule silently misses the most visible strings in the app. It did,
+for three cards, until a screenshot caught it.
+
+Two lists at the top of the script carry what that rule cannot infer:
 
 - `GUARDED_LITERALS` — strings that carry the old name as an identifier rather
   than as prose. Currently the `Supacode Light` / `Supacode Dark` theme
   filenames, which are looked up in the bundle by name.
-- `EXCLUDED_FILES` — the `*Content.swift` agent-integration templates. Their
+- `EXCLUDED_GLOBS` — the `*Content.swift` agent-integration templates. Their
   installers decide "is this file still managed by us" by comparing the file on
   disk against the template byte for byte, so editing even a comment inside one
-  marks every already-installed user as outdated.
+  marks every already-installed user as outdated. Matched as a glob, because
+  upstream adds an agent template every few releases and an enumerated list goes
+  stale silently.
 
 If upstream adds a resource name, persisted raw value, or on-disk template that
-contains `Supacode`, add it to the right list in the same commit. Review the
-`rebrand-fix` diff before committing; it is the only check on those lists being
-complete.
+contains `Supacode`, add it to the right list in the same commit — and prefer a
+pattern over a name. Review the `rebrand-fix` diff before committing; it is the
+only check on those lists being complete.
 
 `supacodeTests/` is deliberately **not** swept. Most of its `Supacode` mentions
 are fixtures the rename would corrupt — fake `/Applications/Supacode.app` paths,

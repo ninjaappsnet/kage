@@ -306,8 +306,8 @@ nonisolated enum KiroSettingsInstallerError: Error, Equatable, LocalizedError {
       "Kiro did not respond to the version check. Check that your shell startup files aren't blocking, then retry."
     case .unsupportedKiroVersion(let detected):
       """
-      Supacode only knows Kiro \(KiroSettingsInstaller.supportedVersionPrefix)x defaults \
-      (detected \(detected.isEmpty ? "unknown" : detected)). Update Supacode before installing hooks.
+      Kage only knows Kiro \(KiroSettingsInstaller.supportedVersionPrefix)x defaults \
+      (detected \(detected.isEmpty ? "unknown" : detected)). Update Kage before installing hooks.
       """
     }
   }
