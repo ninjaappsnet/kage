@@ -215,3 +215,12 @@ When reviewing your own diff, classify each touched **upstream** file as additiv
 
 - `ThirdParty/ghostty` (`https://github.com/ghostty-org/ghostty`): Source dependency used to build `Frameworks/GhosttyKit.xcframework` and terminal resources. The pin tracks upstream; local changes live as out-of-tree patches in `patches/*.patch`, applied to the working tree by `scripts/build-ghostty.sh` before `zig build` and reverted on exit (the pin is never moved, no fork). On a ghostty bump a patch may stop applying and the build fails loudly: refresh the patch, and prefer upstreaming it to retire the carry cost. Run one ghostty build at a time (the apply/revert shares the submodule working tree).
 - `Resources/git-wt` (`https://github.com/khoi/git-wt.git`): Bundled `wt` CLI used by Supacode Git worktree flows at runtime.
+
+## Fork operations (releases, CI, signing)
+
+This fork's release cadence, self-hosted runner constraints, signing and
+notarization secrets, and Sparkle key handling live in
+[`docs/kage-fork-operations.md`](docs/kage-fork-operations.md). Read it before
+cutting a release or touching `.github/workflows/`. In particular: never bump a
+version unprompted, and pushes touching only workflows or docs deliberately
+produce no build.
