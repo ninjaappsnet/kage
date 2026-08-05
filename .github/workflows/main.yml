@@ -149,6 +149,14 @@ jobs:
             --issuer "$APPLE_NOTARIZATION_ISSUER" \
             --keychain "$HOME/Library/Keychains/build.keychain-db"
           rm notarization_key.p8
+      # Before the DMG is built, so the image carries an app that already has its
+      # ticket. Stapling the app after create-dmg only fixes the copy left in
+      # build/export — the one users drag out of the DMG stays ticketless.
+      - name: Notarize and staple the app
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/export -name "Kage.app" -maxdepth 3 -print -quit)"
+          bash ./.github/scripts/notarize.sh "$APP_PATH" "notarytool-profile"
       - name: Build DMG
         run: |
           APP_PATH="$(find build/export -name "Kage.app" -maxdepth 3 -print -quit)"
@@ -162,42 +170,12 @@ jobs:
           if [ "$DMG_OUTPUT" != "build/Kage.dmg" ]; then
             mv "$DMG_OUTPUT" build/Kage.dmg
           fi
-      - name: Notarize and staple
+      # The app inside was already notarized and stapled above; this covers the
+      # image itself so the download carries its own ticket too.
+      - name: Notarize and staple the DMG
         run: |
           set -euo pipefail
-          APP_PATH="$(find build/export -name "Kage.app" -maxdepth 3 -print -quit)"
-          NOTARY_RESULT_PATH=build/notarytool-submit.json
-          NOTARY_LOG_PATH=build/notarytool-log.json
-          NOTARY_STATUS=""
-          NOTARY_ID=""
-          for attempt in 1 2 3; do
-            echo "Notarization attempt $attempt..."
-            submit_exit=0
-            if ! xcrun notarytool submit build/Kage.dmg \
-              --keychain-profile "notarytool-profile" \
-              --wait \
-              --output-format json > "$NOTARY_RESULT_PATH"; then
-              submit_exit=$?
-            fi
-            NOTARY_STATUS="$(jq -r '.status // empty' "$NOTARY_RESULT_PATH" 2>/dev/null || true)"
-            NOTARY_ID="$(jq -r '.id // empty' "$NOTARY_RESULT_PATH" 2>/dev/null || true)"
-            cat "$NOTARY_RESULT_PATH" || true
-            if [ "$submit_exit" -eq 0 ] && [ "$NOTARY_STATUS" = "Accepted" ]; then
-              break
-            fi
-            if [ -n "$NOTARY_ID" ]; then
-              xcrun notarytool log "$NOTARY_ID" --keychain-profile "notarytool-profile" > "$NOTARY_LOG_PATH" || true
-              cat "$NOTARY_LOG_PATH" || true
-            fi
-            echo "Attempt $attempt failed, retrying in 30s..."
-            sleep 30
-          done
-          if [ "$NOTARY_STATUS" != "Accepted" ]; then
-            echo "::error::Notarization failed with status '$NOTARY_STATUS'"
-            exit 1
-          fi
-          xcrun stapler staple build/Kage.dmg
-          xcrun stapler staple "$APP_PATH"
+          bash ./.github/scripts/notarize.sh build/Kage.dmg "notarytool-profile"
       - name: Create app zip for Sparkle
         run: |
           APP_PATH="$(find build/export -name "Kage.app" -maxdepth 3 -print -quit)"
