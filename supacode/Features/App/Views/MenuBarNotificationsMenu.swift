@@ -58,7 +58,7 @@ struct MenuBarNotificationsMenu: View {
         NSApplication.shared.activate()
       }
       MenuBarDivider()
-      MenuBarActionRow(title: "Quit Supacode") {
+      MenuBarActionRow(title: "Quit Kage") {
         // The quit confirmation is an alert hosted by the main window, so it
         // needs one on screen before it can be answered.
         showMainWindow()
@@ -312,7 +312,7 @@ extension View {
   }
 }
 
-/// Status item label: the app icon's "SC" monogram plus the unread count. A
+/// Status item label: the app icon's ninja mask plus the unread count. A
 /// status item renders only an image and text, so the count is text, not a
 /// badge; the glyph is template-rendered so it tints to the menu bar.
 struct MenuBarNotificationsLabel: View {
@@ -323,7 +323,7 @@ struct MenuBarNotificationsLabel: View {
       Text(unreadCount > 0 ? "\(unreadCount)" : "")
         .monospacedDigit()
     } icon: {
-      Image("MenuBarSC")
+      Image("MenuBarKage")
         .renderingMode(.template)
         .resizable()
         .aspectRatio(contentMode: .fit)
@@ -332,8 +332,8 @@ struct MenuBarNotificationsLabel: View {
     .labelStyle(.titleAndIcon)
     .accessibilityLabel(
       unreadCount > 0
-        ? "Supacode, \(unreadCount) unread notification\(unreadCount == 1 ? "" : "s")"
-        : "Supacode"
+        ? "Kage, \(unreadCount) unread notification\(unreadCount == 1 ? "" : "s")"
+        : "Kage"
     )
   }
 }
