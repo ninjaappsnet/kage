@@ -70,14 +70,14 @@ public nonisolated enum GhosttyUserConfigMode: String, Codable, CaseIterable, Se
   public var label: String {
     switch self {
     case .mergeAfterDefault: "Merge after Ghostty config"
-    case .exclusive: "Use only the Supacode config"
+    case .exclusive: "Use only the Kage config"
     }
   }
 
   public var subtitle: String {
     switch self {
-    case .mergeAfterDefault: "Read your Ghostty config first, then apply the Supacode config on top."
-    case .exclusive: "Ignore your Ghostty config. Only the Supacode config is read."
+    case .mergeAfterDefault: "Read your Ghostty config first, then apply the Kage config on top."
+    case .exclusive: "Ignore your Ghostty config. Only the Kage config is read."
     }
   }
 }

@@ -473,7 +473,7 @@ struct SettingsFeatureAgentIntegrationTests {
         lastKnown: .notInstalled,
         reason: "Installed the Claude Code integration, but couldn't read it back to confirm. "
           + "Couldn't read ~/.claude/settings.json: Operation not permitted. "
-          + "Supacode retries when you switch back to it."
+          + "Kage retries when you switch back to it."
       )
     }
   }
@@ -499,7 +499,7 @@ struct SettingsFeatureAgentIntegrationTests {
         lastKnown: .installed,
         reason: "Removed the Kiro CLI integration, but couldn't read it back to confirm. "
           + "Couldn't read ~/.claude/settings.json: Operation not permitted. "
-          + "Supacode retries when you switch back to it."
+          + "Kage retries when you switch back to it."
       )
     }
   }
@@ -708,7 +708,7 @@ struct SettingsFeatureAgentIntegrationTests {
       $0.agentIntegrationStates[.claude] = .undetermined(
         lastKnown: .installed,
         reason: "Couldn't read ~/.claude/settings.json: Operation not permitted. "
-          + "Supacode retries when you switch back to it."
+          + "Kage retries when you switch back to it."
       )
     }
     #expect(!installRan.value)
@@ -732,7 +732,7 @@ struct SettingsFeatureAgentIntegrationTests {
       $0.agentIntegrationStates[.claude] = .undetermined(
         lastKnown: nil,
         reason: "Couldn't read ~/.claude/settings.json: Operation not permitted. "
-          + "Supacode retries when you switch back to it."
+          + "Kage retries when you switch back to it."
       )
     }
     #expect(!installRan.value)
@@ -789,7 +789,7 @@ struct SettingsFeatureAgentIntegrationTests {
       $0.agentIntegrationStates[.claude] = .undetermined(
         lastKnown: .installed,
         reason: "Couldn't determine whether the integration is installed. boom. "
-          + "Supacode retries when you switch back to it."
+          + "Kage retries when you switch back to it."
       )
     }
     #expect(!installRan.value)

@@ -858,7 +858,7 @@ public struct SettingsFeature {
   /// Every undetermined row re-probes on the next activation, so every message
   /// that produces one says so.
   private static func withRetryNote(_ sentence: String) -> String {
-    "\(sentence) Supacode retries when you switch back to it."
+    "\(sentence) Kage retries when you switch back to it."
   }
 
   /// Foundation error descriptions already end in a period; ours don't always.

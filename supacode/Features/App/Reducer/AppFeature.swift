@@ -1368,7 +1368,7 @@ struct AppFeature {
         } message: {
           TextState(
             """
-            Supacode couldn't read your settings this launch, so changes you make now \
+            Kage couldn't read your settings this launch, so changes you make now \
             won't be saved until you relaunch. Your existing settings are safe. This is \
             usually a permissions or disk issue; relaunching after it clears will restore \
             normal saving.
@@ -1388,11 +1388,11 @@ struct AppFeature {
           let detail = problems.isEmpty ? "" : "\n\n" + problems.joined(separator: "\n")
           return TextState(
             """
-            Supacode couldn't finish moving your settings to ~/.config/supacode. \
+            Kage couldn't finish moving your settings to ~/.config/supacode. \
             Your existing settings are safe and untouched in ~/.supacode (and ~/.supacode/.backup).\(detail)
 
             This is usually low disk space or a permissions issue. Free up space or check \
-            permissions on ~/.config/supacode, then relaunch. Supacode will retry automatically.
+            permissions on ~/.config/supacode, then relaunch. Kage will retry automatically.
             """
           )
         }

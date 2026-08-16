@@ -48,7 +48,7 @@ public struct AppearanceSettingsView: View {
           .padding(.leading, 16)
         } label: {
           Text("Visibility")
-          Text("Show Supacode in the Dock, the menu bar, or both.")
+          Text("Show Kage in the Dock, the menu bar, or both.")
         }
       }
       Section {
@@ -123,7 +123,7 @@ public struct AppearanceSettingsView: View {
       Section {
         Toggle(isOn: $store.analyticsEnabled) {
           Text("Share analytics")
-          Text("Anonymous usage data helps improve Supacode.")
+          Text("Anonymous usage data helps improve Kage.")
         }
         Toggle(isOn: $store.crashReportsEnabled) {
           Text("Share crash reports")
@@ -132,7 +132,7 @@ public struct AppearanceSettingsView: View {
       } header: {
         Text("Analytics")
       } footer: {
-        Text("Changes to Analytics require Supacode to restart before they take effect.")
+        Text("Changes to Analytics require Kage to restart before they take effect.")
       }
     }
     .formStyle(.grouped)

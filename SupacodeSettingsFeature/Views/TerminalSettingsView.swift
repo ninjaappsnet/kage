@@ -28,7 +28,7 @@ enum GhosttyUserConfigFile {
 
   /// A comment-only starter so the file is never zero-byte (an empty file counts as absent).
   static let template = """
-    # Supacode Ghostty config.
+    # Kage Ghostty config.
     # In merge mode these settings are read after your main Ghostty config, so
     # they override conflicts and merge the rest. In exclusive mode this file is
     # read on its own. Anything Ghostty understands works here.
@@ -66,7 +66,7 @@ public struct TerminalSettingsView: View {
     Form {
       Section {
         Toggle(isOn: $store.terminalThemeSyncEnabled) {
-          Text("Supacode terminal theme")
+          Text("Kage terminal theme")
           Text("When off, honors your Ghostty config theme.")
         }
       }
@@ -157,7 +157,7 @@ private struct GhosttyConfigurationSection: View {
       }
       if let createErrorMessage {
         Label(
-          "Could not create the Supacode config: \(createErrorMessage)",
+          "Could not create the Kage config: \(createErrorMessage)",
           systemImage: "exclamationmark.triangle"
         )
         .appFont(.caption)
@@ -185,7 +185,7 @@ private struct GhosttyConfigurationSection: View {
     } catch {
       createErrorMessage = error.localizedDescription
       SupaLogger("Settings").error(
-        "Failed to create Supacode Ghostty config: \(error.localizedDescription)")
+        "Failed to create Kage Ghostty config: \(error.localizedDescription)")
       return
     }
     createErrorMessage = nil
@@ -207,7 +207,7 @@ private struct SupacodeConfigPresentRows: View {
 
   var body: some View {
     ConfigSourceRow(
-      title: "Supacode config",
+      title: "Kage config",
       path: GhosttyUserConfigFile.url.path,
       isIgnored: false
     )
@@ -231,8 +231,8 @@ private struct SupacodeConfigMissingRow: View {
       Button("Create and Open", action: onCreate)
         .help("Create ~/.supacode/ghostty.config and open it in your editor")
     } label: {
-      Text("Supacode config")
-      Text("An extra Ghostty config applied only inside Supacode.")
+      Text("Kage config")
+      Text("An extra Ghostty config applied only inside Kage.")
     }
   }
 }
