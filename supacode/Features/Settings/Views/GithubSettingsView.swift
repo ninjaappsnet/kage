@@ -78,7 +78,7 @@ struct GithubSettingsView: View {
               Text("GitHub CLI not found")
               Text("Install `gh` to enable pull request checks.")
                 .foregroundStyle(.secondary)
-                .font(.callout)
+                .appFont(.callout)
             }
           } icon: {
             Image(systemName: "xmark.circle")
@@ -92,7 +92,7 @@ struct GithubSettingsView: View {
               Text("Not authenticated")
               Text("Run `gh auth login` in a terminal to authenticate.")
                 .foregroundStyle(.secondary)
-                .font(.callout)
+                .appFont(.callout)
             }
           } icon: {
             Image(systemName: "exclamationmark.triangle")
@@ -106,7 +106,7 @@ struct GithubSettingsView: View {
               Text("GitHub CLI outdated")
               Text("Update to the latest version for full support.")
                 .foregroundStyle(.secondary)
-                .font(.callout)
+                .appFont(.callout)
             }
           } icon: {
             Image(systemName: "exclamationmark.triangle")
@@ -128,7 +128,7 @@ struct GithubSettingsView: View {
               Text("Error checking status")
               Text(message)
                 .foregroundStyle(.secondary)
-                .font(.callout)
+                .appFont(.callout)
             }
           } icon: {
             Image(systemName: "exclamationmark.triangle")
@@ -150,7 +150,7 @@ struct GithubSettingsView: View {
           EmptyView()
         }
       }
-      Section("Pull Requests") {
+      Section {
         Picker(selection: $store.pullRequestMergeStrategy) {
           ForEach(PullRequestMergeStrategy.allCases) { strategy in
             Text(strategy.title)
@@ -161,21 +161,17 @@ struct GithubSettingsView: View {
           Text("Default strategy when merging PRs from the command palette.")
         }
         Picker(selection: $store.mergedWorktreeAction) {
-          Text("Do nothing").tag(MergedWorktreeAction?.none)
           ForEach(MergedWorktreeAction.allCases) { action in
-            Text(action.title).tag(MergedWorktreeAction?.some(action))
+            Text(action.title).tag(action)
           }
         } label: {
           Text("When a pull request is merged")
-          switch store.mergedWorktreeAction {
-          case .archive:
-            Text("Archives the worktree when its pull request is merged.")
-          case .delete:
-            Text("Follows the \"Delete local branch with worktree\" option in Worktrees settings.")
-          case nil:
-            EmptyView()
-          }
+          Text("Archive or delete a worktree when its pull request is merged.")
         }
+      } header: {
+        Text("Pull Requests")
+      } footer: {
+        Text("Worktree merge actions only affect pre-existing local worktrees.")
       }
     }
     .formStyle(.grouped)

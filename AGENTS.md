@@ -18,7 +18,7 @@ make bump-and-release            # Bump version and push to trigger release
 Run a single test class or method:
 ```bash
 xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platform=macOS" \
-  -only-testing:supacodeTests/TerminalTabManagerTests \
+  -only-testing:supacodeTests/WorktreeContentHostTests \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -skipMacroValidation
 ```
 
@@ -51,13 +51,17 @@ AppFeature (root TCA store)
 ├─ RepositoriesFeature (repos + folders, worktrees, PR state, archive/delete flows)
 ├─ CommandPaletteFeature
 ├─ SettingsFeature (general, notifications, coding agents, shortcuts, github, worktree, repo settings)
+├─ TerminalsFeature
+│   └─ LayoutFeature (per worktree; panes / tabs / selection / focus / zoom — topology only)
+│       └─ PaneLayout (value world: Pane[] → TabItem[] → ContentID)
 └─ UpdatesFeature (Sparkle auto-updates)
 
 WorktreeTerminalManager (global @Observable terminal state)
 ├─ selectedWorktreeID (tracks current selection for bell logic)
-└─ WorktreeTerminalState (per worktree)
-    └─ TerminalTabManager (tab/split management)
-        └─ GhosttySurfaceState[] (one per terminal surface)
+└─ WorktreeContentHost (per worktree; notifications, agent presence, task status)
+
+ContentRuntime (reference world: ContentID → live TabContent)
+└─ TerminalContent (per surface) → GhosttySurfaceView
 
 WorktreeInfoWatcherManager (global worktree watcher state)
 ├─ HEAD watchers per worktree
@@ -125,6 +129,8 @@ Reducer ← .repositories(.worktreeInfoEvent(Event)) ← AsyncStream<Event>
 - Use `SupaLogger` for all logging. Never use `print()` or `os.Logger` directly. `SupaLogger` prints in DEBUG and uses `os.Logger` in release.
 - Avoid top-level free functions. Default to `static` methods, computed properties, or instance methods on a relevant type (enum/struct/extension). Free functions pollute the module namespace, are harder to discover, and easily drift from the inline implementation a consumer ends up writing instead. If the operation is pure and stateless, make it a `static` on a caseless `enum` or the most relevant type, not a top-level `func`.
 - Closure-typed focused values invalidate the AppKit menu on every body run (closures have no Equatable conformance, so SwiftUI re-publishes every time). Always wrap menu-bar action closures with `FocusedAction<Input>` and publish via `.focusedSceneAction(_:enabled:token:perform:)` / `.focusedAction(_:enabled:token:perform:)`. The wrapper dedupes on `(isEnabled, token)`, so AppKit only rebuilds the menu when something the menu actually displays changes. Token rules in `App/Models/FocusedAction.swift`: set `token` to a hashable projection of any captured state that affects behavior; leave it `nil` when the closure captures only the store / `@State` bindings. Consumers should read the action with `@FocusedValue(\.x)` and gate with `action?.isEnabled != true`, not `action == nil`.
+- Sidebar rows must not fan out invalidation. Per-row state lives in `RepositoriesFeature.State.sidebarItems` so a per-leaf mutation (notification tick, agent activity, running-script update) invalidates only that leaf, not every sibling. The view renders the cached `state.sidebarStructure` (computed in the reducer's post-reduce hook), never reading `sidebarItems[id:]` from a view body; derive per-leaf data in `computeSidebarStructure(...)`, not in the view.
+- Never lift content-specific (e.g. terminal-only) mechanics or state into the layout layer. `LayoutFeature` owns topology and strip mechanics only (panes, tabs, selection, focus, zoom, rename identity); anything a specific content kind produces (agent badges, progress, script locks, busyness) lives on the content side, exposed to the strip through the content's observable `TabChrome` (`Features/Terminal/Content/TabChrome.swift`), never as layout reducer state or actions.
 
 ### Formatting & Linting
 

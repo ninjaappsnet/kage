@@ -31,10 +31,6 @@ public struct AppearanceSettingsView: View {
           Text("Appearance")
           Text("Follow the system appearance, or always use light or dark.")
         }
-        Toggle(isOn: $store.terminalThemeSyncEnabled) {
-          Text("Kage terminal theme")
-          Text("When off, honors your Ghostty config theme.")
-        }
       }
       Section {
         LabeledContent {
@@ -52,59 +48,30 @@ public struct AppearanceSettingsView: View {
           .padding(.leading, 16)
         } label: {
           Text("Visibility")
-          Text("Show Kage in the Dock, the menu bar, or both.")
-        }
-      }
-      Section("Persistence") {
-        Toggle(isOn: $store.terminateSessionsOnQuit) {
-          Text("Terminate sessions on quit")
-          Text(
-            """
-            Close all tabs and stop background shells when quitting.
-            Terminal persistence is powered by [zmx\u{00A0}\u{2197}](https://github.com/neurosnap/zmx).
-            """
-          )
-        }
-        Toggle(isOn: $store.terminalHibernationEnabled) {
-          HStack(spacing: 6) {
-            Text("Hibernate inactive terminals")
-            BetaBadge()
-          }
-          Text(
-            "Background terminal tabs release their renderer after a few minutes of inactivity "
-              + "and reconnect instantly when viewed. Sessions and running agents are unaffected."
-          )
+          Text("Show Supacode in the Dock, the menu bar, or both.")
         }
       }
       Section {
-        Toggle(isOn: $store.confirmCloseSurface) {
-          Text("Confirm before closing terminals")
-          Text("Asks before closing a terminal with a running process or a persisted background session.")
+        Picker(selection: $store.confirmCloseTab) {
+          ForEach(ConfirmCloseTabMode.allCases, id: \.self) { mode in
+            DefaultTaggedLabel(label: mode.label, isDefault: mode == GlobalSettings.default.confirmCloseTab)
+              .tag(mode)
+          }
+        } label: {
+          Text("Confirm before closing tabs")
+          Text(store.confirmCloseTab.subtitle)
         }
         Picker(selection: $store.confirmQuitMode) {
           ForEach(ConfirmQuitMode.allCases, id: \.self) { mode in
-            Text(mode.label).tag(mode)
+            DefaultTaggedLabel(label: mode.label, isDefault: mode == GlobalSettings.default.confirmQuitMode)
+              .tag(mode)
           }
         } label: {
           Text("Confirm before quitting app")
           Text(store.confirmQuitMode.subtitle)
         }
       }
-      Section {
-        Toggle(isOn: $store.remoteSessionPersistenceEnabled) {
-          HStack(spacing: 6) {
-            Text("Persist sessions on remote host")
-            BetaBadge()
-          }
-          Text(
-            """
-            Keeps SSH sessions alive across disconnects. Ignored when \
-            [zmx\u{00A0}\u{2197}](https://github.com/neurosnap/zmx) is not installed on the host.
-            """
-          )
-        }
-      }
-      Section("Editor") {
+      Section("Editor & Layout") {
         // The stored id deliberately keeps naming an uninstalled editor, so the choice
         // survives a reinstall. No row is tagged with it though, and an untagged
         // selection renders blank, so normalize for display and write back raw.
@@ -121,21 +88,42 @@ public struct AppearanceSettingsView: View {
         Picker(
           selection: defaultEditorID
         ) {
-          Text("Automatic")
+          DefaultTaggedLabel(label: "Auto", isDefault: true)
             .tag(OpenWorktreeAction.automaticSettingsID)
           ForEach(openActionOptions) { action in
             Text(action.labelTitle)
               .tag(action.settingsID)
           }
         } label: {
-          Text("Default editor")
+          Text("Global editor")
           Text("Applies to Worktrees without repository overrides.")
+        }
+        Picker(selection: $store.hoverFocusMode) {
+          ForEach(HoverFocusMode.allCases, id: \.self) { mode in
+            DefaultTaggedLabel(label: mode.label, isDefault: mode == .never).tag(mode)
+          }
+        } label: {
+          Text("Focus panes on hover")
+          Text("Move focus to a split pane as the pointer moves over it, within the active window.")
+        }
+      }
+      Section("Accessibility") {
+        Picker(selection: $store.chromeTextSize) {
+          ForEach(ChromeTextSize.allCases) { size in
+            DefaultTaggedLabel(label: size.label, isDefault: size == .default).tag(size)
+          }
+        } label: {
+          HStack(spacing: 6) {
+            Text("Text size")
+            BetaBadge()
+          }
+          Text("Sizes all non-terminal text. The terminal keeps its own font size.")
         }
       }
       Section {
         Toggle(isOn: $store.analyticsEnabled) {
           Text("Share analytics")
-          Text("Anonymous usage data helps improve Kage.")
+          Text("Anonymous usage data helps improve Supacode.")
         }
         Toggle(isOn: $store.crashReportsEnabled) {
           Text("Share crash reports")
@@ -144,7 +132,7 @@ public struct AppearanceSettingsView: View {
       } header: {
         Text("Analytics")
       } footer: {
-        Text("Changes to Analytics require Kage to restart before they take effect.")
+        Text("Changes to Analytics require Supacode to restart before they take effect.")
       }
     }
     .formStyle(.grouped)
@@ -153,19 +141,5 @@ public struct AppearanceSettingsView: View {
     .padding(.leading, -8)
     .padding(.trailing, -6)
     .navigationTitle("General")
-  }
-}
-
-/// Small system-styled tag marking a setting as Beta. Uses `.quaternary` fill so
-/// it tracks the theme and never introduces a custom color.
-private struct BetaBadge: View {
-  var body: some View {
-    Text("Beta")
-      .font(.caption2)
-      .fontWeight(.semibold)
-      .foregroundStyle(.secondary)
-      .padding(.horizontal, 6)
-      .padding(.vertical, 2)
-      .background(.quaternary, in: .capsule)
   }
 }

@@ -15,8 +15,13 @@ public nonisolated enum AppShortcutID: Codable, Hashable, Sendable, CodingKeyRep
   case worktreeHistoryBack, worktreeHistoryForward
   case selectWorktree(Int)
   case selectTab(Int)
+  case selectNextTab, selectPreviousTab
   case openWorktree, revealInFinder, openRepository, addRemoteRepository, cloneRepository, openPullRequest, copyPath
-  case runScript, stopRunScript, renameTab
+  case runScript, stopRunScript, renameTab, toggleWindowMode
+  case newTerminalTab, closeTab
+  case splitRight, splitLeft, splitDown, splitUp
+  case focusSplitLeft, focusSplitRight, focusSplitUp, focusSplitDown
+  case toggleSplitZoom, equalizeSplits
   case jumpToLatestUnread
   case togglePullRequestInspector, toggleFilesInspector, toggleNotificationsInspector
 
@@ -61,6 +66,8 @@ public nonisolated enum AppShortcutID: Codable, Hashable, Sendable, CodingKeyRep
     case .worktreeHistoryForward: "worktreeHistoryForward"
     case .selectWorktree(let index): "selectWorktree\(index)"
     case .selectTab(let index): "selectTab\(index)"
+    case .selectNextTab: "selectNextTab"
+    case .selectPreviousTab: "selectPreviousTab"
     case .openWorktree: "openWorktree"
     case .revealInFinder: "revealInFinder"
     case .openRepository: "openRepository"
@@ -71,6 +78,19 @@ public nonisolated enum AppShortcutID: Codable, Hashable, Sendable, CodingKeyRep
     case .runScript: "runScript"
     case .stopRunScript: "stopRunScript"
     case .renameTab: "renameTab"
+    case .toggleWindowMode: "toggleWindowMode"
+    case .newTerminalTab: "newTerminalTab"
+    case .closeTab: "closeTab"
+    case .splitRight: "splitRight"
+    case .splitLeft: "splitLeft"
+    case .splitDown: "splitDown"
+    case .splitUp: "splitUp"
+    case .focusSplitLeft: "focusSplitLeft"
+    case .focusSplitRight: "focusSplitRight"
+    case .focusSplitUp: "focusSplitUp"
+    case .focusSplitDown: "focusSplitDown"
+    case .toggleSplitZoom: "toggleSplitZoom"
+    case .equalizeSplits: "equalizeSplits"
     case .jumpToLatestUnread: "jumpToLatestUnread"
     case .togglePullRequestInspector: "togglePullRequestInspector"
     case .toggleFilesInspector: "toggleFilesInspector"
@@ -110,6 +130,21 @@ public nonisolated enum AppShortcutID: Codable, Hashable, Sendable, CodingKeyRep
     "runScript": .runScript,
     "stopRunScript": .stopRunScript,
     "renameTab": .renameTab,
+    "toggleWindowMode": .toggleWindowMode,
+    "newTerminalTab": .newTerminalTab,
+    "closeTab": .closeTab,
+    "splitRight": .splitRight,
+    "splitLeft": .splitLeft,
+    "splitDown": .splitDown,
+    "splitUp": .splitUp,
+    "focusSplitLeft": .focusSplitLeft,
+    "focusSplitRight": .focusSplitRight,
+    "focusSplitUp": .focusSplitUp,
+    "focusSplitDown": .focusSplitDown,
+    "toggleSplitZoom": .toggleSplitZoom,
+    "equalizeSplits": .equalizeSplits,
+    "selectNextTab": .selectNextTab,
+    "selectPreviousTab": .selectPreviousTab,
     "jumpToLatestUnread": .jumpToLatestUnread,
     "togglePullRequestInspector": .togglePullRequestInspector,
     "toggleFilesInspector": .toggleFilesInspector,
@@ -158,6 +193,8 @@ public nonisolated enum AppShortcutID: Codable, Hashable, Sendable, CodingKeyRep
     case .worktreeHistoryForward: "Forward in Worktree History"
     case .selectWorktree(let index): "Select Worktree \(index == 0 ? 10 : index)"
     case .selectTab(let index): "Select Tab \(index)"
+    case .selectNextTab: "Select Next Tab"
+    case .selectPreviousTab: "Select Previous Tab"
     case .openWorktree: "Open Worktree"
     case .revealInFinder: "Reveal in Finder"
     case .openRepository: "Open Repository or Folder"
@@ -168,6 +205,19 @@ public nonisolated enum AppShortcutID: Codable, Hashable, Sendable, CodingKeyRep
     case .runScript: "Run Script"
     case .stopRunScript: "Stop Run Script"
     case .renameTab: "Rename Tab"
+    case .toggleWindowMode: "Toggle Window Mode"
+    case .newTerminalTab: "New Terminal Tab"
+    case .closeTab: "Close Tab"
+    case .splitRight: "Split Right"
+    case .splitLeft: "Split Left"
+    case .splitDown: "Split Down"
+    case .splitUp: "Split Up"
+    case .focusSplitLeft: "Focus Split Left"
+    case .focusSplitRight: "Focus Split Right"
+    case .focusSplitUp: "Focus Split Up"
+    case .focusSplitDown: "Focus Split Down"
+    case .toggleSplitZoom: "Toggle Split Zoom"
+    case .equalizeSplits: "Equalize Splits"
     case .jumpToLatestUnread: "Jump to Latest Unread"
     case .togglePullRequestInspector: "Toggle Pull Request Inspector"
     case .toggleFilesInspector: "Toggle Files Inspector"
@@ -193,12 +243,22 @@ public struct AppShortcut: Identifiable {
   // Whether the binding is active with no user override; `false` ships the
   // shortcut as a rebindable option that stays off until the user enables it.
   public let isEnabledByDefault: Bool
+  // `false` pins the shortcut to its default chord, always enabled; overrides
+  // are ignored and settings offers no recorder or toggle.
+  public let isCustomizable: Bool
 
-  public init(id: AppShortcutID, key: Character, modifiers: EventModifiers, isEnabledByDefault: Bool = true) {
+  public init(
+    id: AppShortcutID,
+    key: Character,
+    modifiers: EventModifiers,
+    isEnabledByDefault: Bool = true,
+    isCustomizable: Bool = true
+  ) {
     self.id = id
     self.keyEquivalent = KeyEquivalent(key)
     self.modifiers = modifiers
     self.isEnabledByDefault = isEnabledByDefault
+    self.isCustomizable = isCustomizable
     self.keyCodeIsExplicit = false
     let code = AppShortcutOverride.keyCode(forDisplayedKeyEquivalent: key) ?? AppShortcutOverride.keyCode(for: key)
     self.keyCode = code
@@ -215,7 +275,8 @@ public struct AppShortcut: Identifiable {
     keyEquivalent: KeyEquivalent,
     ghosttyKeyName: String,
     modifiers: EventModifiers,
-    isEnabledByDefault: Bool = true
+    isEnabledByDefault: Bool = true,
+    isCustomizable: Bool = true
   ) {
     self.id = id
     self.keyEquivalent = keyEquivalent
@@ -224,6 +285,7 @@ public struct AppShortcut: Identifiable {
     self.keyCodeIsExplicit = false
     self.ghosttyKeyName = ghosttyKeyName
     self.isEnabledByDefault = isEnabledByDefault
+    self.isCustomizable = isCustomizable
   }
 
   public var displayName: String { id.displayName }
@@ -237,8 +299,11 @@ public struct AppShortcut: Identifiable {
     return parts.joined(separator: "+")
   }
 
-  public var ghosttyUnbindArgument: String {
-    "--keybind=\(ghosttyKeybind)=unbind"
+  // nil when the key has no Ghostty-parsable name; emitting the hex fallback
+  // would make Ghostty reject the line and keep the chord bound.
+  public var ghosttyUnbindConfigLine: String? {
+    guard !ghosttyKeyName.hasPrefix("0x") else { return nil }
+    return "keybind = \(ghosttyKeybind)=unbind"
   }
 
   // Layout-aware display string.
@@ -255,7 +320,9 @@ public struct AppShortcut: Identifiable {
 
   // Resolves the effective shortcut considering user overrides. Returns `nil`
   // when the user disabled it, or when it is disabled by default and unset.
+  // Non-customizable shortcuts ignore overrides entirely.
   public func effective(from overrides: [AppShortcutID: AppShortcutOverride]) -> AppShortcut? {
+    guard isCustomizable else { return self }
     guard let override = overrides[id] else { return isEnabledByDefault ? self : nil }
     guard override.isEnabled else { return nil }
     return AppShortcut(id: id, override: override)
@@ -274,10 +341,13 @@ public struct AppShortcut: Identifiable {
   // from the character would snap a keypad or special key back onto the main-row key that
   // prints the same thing. A default only carries a character, so its code has to track
   // the live layout, or an input source switch would strand it on the wrong physical key.
-  // Nil only for the special-key defaults, which no caller matches against.
+  // Special-key defaults resolve through the fixed key-code table.
   private var resolvedKeyCode: UInt16? {
     guard !keyCodeIsExplicit else { return keyCode }
-    return AppShortcutOverride.keyCode(forDisplayedKeyEquivalent: keyEquivalent.character) ?? keyCode
+    if let resolved = AppShortcutOverride.keyCode(forDisplayedKeyEquivalent: keyEquivalent.character) {
+      return resolved
+    }
+    return keyCode ?? AppShortcutOverride.specialKeyCode(for: keyEquivalent)
   }
 
   private static func rawModifierFlags(of event: NSEvent) -> AppShortcutOverride.ModifierFlags {
@@ -307,6 +377,7 @@ public struct AppShortcut: Identifiable {
     self.keyCodeIsExplicit = true
     self.ghosttyKeyName = AppShortcutOverride.resolvedGhosttyKeyName(for: override.keyCode)
     self.isEnabledByDefault = true
+    self.isCustomizable = true
   }
 
   private var ghosttyModifierParts: [String] {
@@ -336,6 +407,7 @@ public enum AppShortcutCategory: String, CaseIterable, Sendable {
   case sidebar
   case worktrees
   case worktreeSelection
+  case layout
   case tabSelection
   case actions
 
@@ -345,6 +417,7 @@ public enum AppShortcutCategory: String, CaseIterable, Sendable {
     case .sidebar: "Sidebar"
     case .worktrees: "Worktrees"
     case .worktreeSelection: "Worktree Selection"
+    case .layout: "Layout"
     case .tabSelection: "Tab Selection"
     case .actions: "Actions"
     }
@@ -399,7 +472,7 @@ public enum AppShortcuts {
   )
   public static let confirmWorktreeAction = AppShortcut(
     id: .confirmWorktreeAction,
-    keyEquivalent: .return, ghosttyKeyName: "return", modifiers: .command
+    keyEquivalent: .return, ghosttyKeyName: "enter", modifiers: .command
   )
   public static let selectNextWorktree = AppShortcut(
     id: .selectNextWorktree,
@@ -437,6 +510,15 @@ public enum AppShortcuts {
   public static let selectTab7 = AppShortcut(id: .selectTab(7), key: "7", modifiers: [.command])
   public static let selectTab8 = AppShortcut(id: .selectTab(8), key: "8", modifiers: [.command])
   public static let selectTab9 = AppShortcut(id: .selectTab(9), key: "9", modifiers: [.command])
+  // Relative tab cycling on Ghostty's layout-independent defaults (ctrl+tab).
+  public static let selectPreviousTab = AppShortcut(
+    id: .selectPreviousTab,
+    keyEquivalent: .tab, ghosttyKeyName: "tab", modifiers: [.control, .shift]
+  )
+  public static let selectNextTab = AppShortcut(
+    id: .selectNextTab,
+    keyEquivalent: .tab, ghosttyKeyName: "tab", modifiers: [.control]
+  )
 
   public static let openWorktree = AppShortcut(id: .openWorktree, key: "o", modifiers: .command)
   public static let revealInFinder = AppShortcut(id: .revealInFinder, key: "r", modifiers: [.command, .option])
@@ -452,6 +534,42 @@ public enum AppShortcuts {
   public static let runScript = AppShortcut(id: .runScript, key: "r", modifiers: .command)
   public static let stopRunScript = AppShortcut(id: .stopRunScript, key: ".", modifiers: .command)
   public static let renameTab = AppShortcut(id: .renameTab, key: "r", modifiers: [.control, .shift])
+  public static let toggleWindowMode = AppShortcut(id: .toggleWindowMode, key: "m", modifiers: [.command, .shift])
+  public static let newTerminalTab = AppShortcut(id: .newTerminalTab, key: "t", modifiers: .command)
+  // Hardcoded to the platform's close chord: no settings row, and the
+  // recorder refuses ⌘W for anything else.
+  public static let closeTab = AppShortcut(id: .closeTab, key: "w", modifiers: .command, isCustomizable: false)
+  public static let splitRight = AppShortcut(id: .splitRight, key: "d", modifiers: .command)
+  public static let splitDown = AppShortcut(id: .splitDown, key: "d", modifiers: [.command, .shift])
+  public static let splitLeft = AppShortcut(
+    id: .splitLeft, key: "d", modifiers: [.command, .option], isEnabledByDefault: false
+  )
+  public static let splitUp = AppShortcut(
+    id: .splitUp, key: "d", modifiers: [.command, .option, .shift], isEnabledByDefault: false
+  )
+  public static let focusSplitLeft = AppShortcut(
+    id: .focusSplitLeft,
+    keyEquivalent: .leftArrow, ghosttyKeyName: "arrow_left", modifiers: [.command, .option]
+  )
+  public static let focusSplitRight = AppShortcut(
+    id: .focusSplitRight,
+    keyEquivalent: .rightArrow, ghosttyKeyName: "arrow_right", modifiers: [.command, .option]
+  )
+  public static let focusSplitUp = AppShortcut(
+    id: .focusSplitUp,
+    keyEquivalent: .upArrow, ghosttyKeyName: "arrow_up", modifiers: [.command, .option]
+  )
+  public static let focusSplitDown = AppShortcut(
+    id: .focusSplitDown,
+    keyEquivalent: .downArrow, ghosttyKeyName: "arrow_down", modifiers: [.command, .option]
+  )
+  public static let toggleSplitZoom = AppShortcut(
+    id: .toggleSplitZoom,
+    keyEquivalent: .return, ghosttyKeyName: "enter", modifiers: [.command, .shift]
+  )
+  public static let equalizeSplits = AppShortcut(
+    id: .equalizeSplits, key: "=", modifiers: [.command, .shift], isEnabledByDefault: false
+  )
   public static let jumpToLatestUnread = AppShortcut(
     id: .jumpToLatestUnread, key: "u", modifiers: [.command, .shift]
   )
@@ -523,7 +641,16 @@ public enum AppShortcuts {
       ]
     ),
     AppShortcutGroup(category: .worktreeSelection, shortcuts: worktreeSelection),
-    AppShortcutGroup(category: .tabSelection, shortcuts: tabSelection),
+    AppShortcutGroup(
+      category: .layout,
+      shortcuts: [
+        newTerminalTab, closeTab,
+        splitRight, splitLeft, splitDown, splitUp,
+        focusSplitLeft, focusSplitRight, focusSplitUp, focusSplitDown,
+        toggleSplitZoom, equalizeSplits, toggleWindowMode,
+      ]
+    ),
+    AppShortcutGroup(category: .tabSelection, shortcuts: tabSelection + [selectPreviousTab, selectNextTab]),
     AppShortcutGroup(
       category: .actions,
       shortcuts: [
@@ -546,41 +673,22 @@ public enum AppShortcuts {
     return shortcut.enabledOverride
   }
 
-  // MARK: - Tab selection Ghostty bindings.
+  // MARK: - Ghostty keybind config.
 
-  // Ghostty `goto_tab` bindings for worktree selection, derived from the user's
-  // effective shortcuts instead of a fixed list. A disabled shortcut produces no
-  // binding, so its chord (e.g. ⌃6) reaches the terminal instead of being captured.
-  // A remapped shortcut moves the binding to the chosen key. The physical `digit_N`
-  // variant is emitted only while the binding stays the default Control+digit, so
-  // non-US keyboard layouts keep working.
-  public static func tabSelectionGhosttyKeybindArguments(
+  // `keybind = X=unbind` config lines releasing every effective chord from the
+  // terminal. Shipped as a config file because on macOS Ghostty reads CLI args
+  // from `NSProcessInfo`, never from `ghostty_init`'s argv.
+  public static func ghosttyKeybindConfigLines(
     from overrides: [AppShortcutID: AppShortcutOverride]
   ) -> [String] {
-    worktreeSelection.flatMap { shortcut -> [String] in
-      guard case .selectWorktree(let slot) = shortcut.id,
-        let effective = shortcut.effective(from: overrides)
-      else {
-        return []
+    all.compactMap { shortcut in
+      guard let effective = shortcut.effective(from: overrides) else { return nil }
+      guard let line = effective.ghosttyUnbindConfigLine else {
+        shortcutLogger.error("No Ghostty key name for \(effective.displayName); the terminal keeps this chord.")
+        return nil
       }
-      let tabIndex = slot == 0 ? 10 : slot
-      var arguments = ["--keybind=\(effective.ghosttyKeybind)=goto_tab:\(tabIndex)"]
-      if effective.ghosttyKeybind == "ctrl+\(slot)" {
-        arguments.append("--keybind=ctrl+digit_\(slot)=goto_tab:\(tabIndex)")
-      }
-      return arguments
+      return line
     }
-  }
-
-  // MARK: - Ghostty CLI arguments.
-
-  public static var ghosttyCLIKeybindArguments: [String] {
-    ghosttyCLIKeybindArguments(from: [:])
-  }
-
-  public static func ghosttyCLIKeybindArguments(from overrides: [AppShortcutID: AppShortcutOverride]) -> [String] {
-    let effectiveShortcuts = all.compactMap { $0.effective(from: overrides) }
-    return effectiveShortcuts.map(\.ghosttyUnbindArgument) + tabSelectionGhosttyKeybindArguments(from: overrides)
   }
 
   // MARK: - Conflict detection.

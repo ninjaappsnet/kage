@@ -81,7 +81,7 @@ struct SettingsFeatureTests {
       crashReportsEnabled: false,
       githubIntegrationEnabled: true,
       deleteBranchOnDeleteWorktree: true,
-      mergedWorktreeAction: nil,
+      mergedWorktreeAction: .ignore,
       promptForWorktreeCreation: false
     )
     @Shared(.settingsFile) var settingsFile
@@ -128,6 +128,105 @@ struct SettingsFeatureTests {
     }
     await store.receive(\.delegate.settingsChanged)
     #expect(settingsFile.global.terminalHibernationEnabled == false)
+  }
+
+  @Test(.dependencies) func chromeTextSizePersistsChanges() async {
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = .default }
+
+    let store = TestStore(initialState: SettingsFeature.State()) {
+      SettingsFeature()
+    }
+
+    await store.send(.binding(.set(\.chromeTextSize, .extraLarge))) {
+      $0.chromeTextSize = .extraLarge
+    }
+    await store.receive(\.delegate.settingsChanged)
+    #expect(settingsFile.global.chromeTextSize == .extraLarge)
+  }
+
+  @Test(.dependencies) func settingsLoadedAppliesChromeTextSize() async {
+    // The write path is covered above; this covers the read side, that a size
+    // on disk reaches feature state instead of showing Default in the picker.
+    var loaded = GlobalSettings.default
+    loaded.chromeTextSize = .extraLarge
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = loaded }
+
+    let store = TestStore(initialState: SettingsFeature.State()) {
+      SettingsFeature()
+    }
+    store.exhaustivity = .off(showSkippedAssertions: false)
+
+    await store.send(.settingsLoaded(loaded))
+    #expect(store.state.chromeTextSize == .extraLarge)
+    await store.skipReceivedActions()
+  }
+
+  @Test(.dependencies) func unrelatedSettingsChangeKeepsChromeTextSize() async {
+    // `persist` assigns `$0.global` wholesale, so a field missing from this
+    // feature's state would be written back as its default on every unrelated
+    // change.
+    var initialSettings = GlobalSettings.default
+    initialSettings.chromeTextSize = .large
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = initialSettings }
+
+    let store = TestStore(initialState: SettingsFeature.State(settings: initialSettings)) {
+      SettingsFeature()
+    }
+
+    await store.send(.binding(.set(\.terminalHibernationEnabled, false))) {
+      $0.terminalHibernationEnabled = false
+    }
+    await store.receive(\.delegate.settingsChanged)
+    #expect(settingsFile.global.chromeTextSize == .large)
+  }
+
+  @Test(.dependencies) func togglingAutomaticRepositoryRefreshPersistsChanges() async {
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = .default }
+
+    let store = TestStore(initialState: SettingsFeature.State()) {
+      SettingsFeature()
+    }
+
+    await store.send(.binding(.set(\.automaticRepositoryRefreshEnabled, false))) {
+      $0.automaticRepositoryRefreshEnabled = false
+    }
+    await store.receive(\.delegate.settingsChanged)
+    #expect(settingsFile.global.automaticRepositoryRefreshEnabled == false)
+  }
+
+  @Test(.dependencies) func togglingHoverFocusModePersistsChanges() async {
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = .default }
+
+    let store = TestStore(initialState: SettingsFeature.State()) {
+      SettingsFeature()
+    }
+
+    await store.send(.binding(.set(\.hoverFocusMode, .terminals))) {
+      $0.hoverFocusMode = .terminals
+    }
+    await store.receive(\.delegate.settingsChanged)
+    #expect(settingsFile.global.hoverFocusMode == .terminals)
+  }
+
+  @Test(.dependencies) func settingsLoadedAppliesHoverFocusMode() async {
+    var loaded = GlobalSettings.default
+    loaded.hoverFocusMode = .terminals
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = loaded }
+
+    let store = TestStore(initialState: SettingsFeature.State()) {
+      SettingsFeature()
+    }
+    store.exhaustivity = .off(showSkippedAssertions: false)
+
+    await store.send(.settingsLoaded(loaded))
+    #expect(store.state.hoverFocusMode == .terminals)
+    await store.skipReceivedActions()
   }
 
   @Test(.dependencies) func confirmCloseSurfacePersistsChanges() async {
@@ -437,7 +536,8 @@ struct SettingsFeatureTests {
       ]
       $0.repositorySettings = RepositorySettingsFeature.State(
         rootURL: rootURL,
-        settings: .default
+        settings: .default,
+        globalMergedWorktreeAction: .archive
       )
     }
     await store.receive(\.delegate.settingsChanged)
@@ -534,6 +634,28 @@ struct SettingsFeatureTests {
     await store.receive(\.delegate.settingsChanged)
     #expect(store.state.repositorySettings?.globalPullRequestMergeStrategy == .squash)
     #expect(settingsFile.global.pullRequestMergeStrategy == .squash)
+  }
+
+  @Test(.dependencies) func changingGlobalMergedWorktreeActionUpdatesRepositorySettingsState() async {
+    let rootURL = URL(fileURLWithPath: "/tmp/repo")
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = .default }
+    var state = SettingsFeature.State()
+    state.repositorySettings = RepositorySettingsFeature.State(
+      rootURL: rootURL,
+      settings: .default
+    )
+    let store = TestStore(initialState: state) {
+      SettingsFeature()
+    }
+
+    await store.send(.binding(.set(\.mergedWorktreeAction, .archive))) {
+      $0.mergedWorktreeAction = .archive
+      $0.repositorySettings?.globalMergedWorktreeAction = .archive
+    }
+    await store.receive(\.delegate.settingsChanged)
+    #expect(store.state.repositorySettings?.globalMergedWorktreeAction == .archive)
+    #expect(settingsFile.global.mergedWorktreeAction == .archive)
   }
 
   // MARK: - Global scripts.
@@ -696,6 +818,48 @@ struct SettingsFeatureTests {
     }
     await store.receive(\.delegate.settingsChanged)
     #expect(settingsFile.global.shortcutOverrides[.newWorktree] == nil)
+  }
+
+  @Test(.dependencies) func updateShortcutIgnoresNonCustomizableShortcut() async {
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = .default }
+
+    let store = TestStore(initialState: SettingsFeature.State()) {
+      SettingsFeature()
+    }
+
+    let override = AppShortcutOverride(keyCode: UInt16(kVK_ANSI_K), modifiers: [.command])
+    await store.send(.updateShortcut(id: .closeTab, override: override))
+    #expect(settingsFile.global.shortcutOverrides[.closeTab] == nil)
+  }
+
+  @Test(.dependencies) func toggleShortcutEnabledIgnoresNonCustomizableShortcut() async {
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = .default }
+
+    let store = TestStore(initialState: SettingsFeature.State()) {
+      SettingsFeature()
+    }
+
+    await store.send(.toggleShortcutEnabled(id: .closeTab, enabled: false))
+    #expect(settingsFile.global.shortcutOverrides[.closeTab] == nil)
+  }
+
+  @Test(.dependencies) func nonCustomizableGuardLeavesASeededOverrideUntouched() async {
+    // A stale persisted override must be preserved verbatim, not deleted.
+    let stale = AppShortcutOverride(keyCode: UInt16(kVK_ANSI_K), modifiers: [.command])
+    var initialSettings = GlobalSettings.default
+    initialSettings.shortcutOverrides = [.closeTab: stale]
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = initialSettings }
+
+    let store = TestStore(initialState: SettingsFeature.State(settings: initialSettings)) {
+      SettingsFeature()
+    }
+
+    await store.send(.toggleShortcutEnabled(id: .closeTab, enabled: false))
+    await store.send(.updateShortcut(id: .closeTab, override: nil))
+    #expect(settingsFile.global.shortcutOverrides[.closeTab] == stale)
   }
 
   @Test(.dependencies) func resetAllShortcutsClearsOverrides() async {

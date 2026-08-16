@@ -73,6 +73,7 @@ let testDependencies: [TargetDependency] = [
 let sharedTestSupportSources: [Path] = [
   "supacodeTests/AgentPresence+TestHelpers.swift",
   "supacodeTests/BrandedIDTestSupport.swift",
+  "supacodeTests/LoginShellTestSupport.swift",
   "supacodeTests/ProcessTestSupport.swift",
   "supacodeTests/RemoteRepoTestSupport.swift",
   "supacodeTests/RepositoriesSidebarTestHelpers.swift",
@@ -81,6 +82,7 @@ let sharedTestSupportSources: [Path] = [
   "supacodeTests/SettingsTestStorage.swift",
   "supacodeTests/ShellInvocationTestSupport.swift",
   "supacodeTests/SidebarConsistency.swift",
+  "supacodeTests/TabContentTestSupport.swift",
   "supacodeTests/WorktreeTestSupport.swift",
   "supacodeTests/WritableKeyPath+Sendable.swift",
 ]
@@ -106,6 +108,7 @@ let featureTestSources: [Path] = [
 // Ghostty runtime, terminal manager, and zmx suites.
 let terminalTestSources: [Path] = [
   "supacodeTests/Ghostty*.swift",
+  "supacodeTests/LayoutFeature*.swift",
   "supacodeTests/Layouts*.swift",
   "supacodeTests/SplitTree*.swift",
   "supacodeTests/WorktreeTerminalManager*.swift",

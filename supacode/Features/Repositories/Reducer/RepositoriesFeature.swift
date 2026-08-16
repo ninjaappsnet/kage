@@ -19,6 +19,9 @@ private enum CancelID {
   static func delayedPRRefresh(_ worktreeID: Worktree.ID) -> String {
     "repositories.delayedPRRefresh.\(worktreeID)"
   }
+  static func worktreeLineChanges(_ worktreeID: Worktree.ID) -> String {
+    "repositories.worktreeLineChanges.\(worktreeID)"
+  }
 }
 
 nonisolated let repositoriesLogger = SupaLogger("Repositories")
@@ -172,7 +175,8 @@ struct RepositoriesFeature {
     /// clobber each other's pending set.
     var activeRemovalBatches: [BatchID: ActiveRemovalBatch] = [:]
     var autoDeleteArchivedWorktreesAfterDays: AutoDeletePeriod?
-    var mergedWorktreeAction: MergedWorktreeAction?
+    /// Global fallback applied when a repository has no `mergedWorktreeAction` override.
+    var mergedWorktreeAction: MergedWorktreeAction = .ignore
     var moveNotifiedWorktreeToTop = false
     /// Installed editors in menu order, mirrored down from `AppFeature` so the
     /// sidebar context menu never probes LaunchServices while building.
@@ -279,7 +283,7 @@ struct RepositoriesFeature {
     var sidebarGrouping: SidebarGrouping = .empty
     /// Long-lived reader hoisted onto State so `reconcileSidebarItems` stays a
     /// pure static mutator and doesn't re-decode the layouts file on every call.
-    @SharedReader(.layouts) var persistedLayouts: [String: TerminalLayoutSnapshot]
+    @SharedReader(.layouts) var persistedLayouts: LayoutsFile
     /// Surfaces seeded onto rows from the persisted layout but not yet broadcast
     /// to agent presence. Accumulates across reconciles; the single drain owner
     /// is `AppFeature.repositoriesChanged`, which intersects against live
@@ -318,6 +322,9 @@ struct RepositoriesFeature {
   struct PendingPullRequestRefresh: Equatable {
     var repositoryRootURL: URL
     var worktreeIDs: [Worktree.ID]
+    // Preserved across the queue so a manual refresh deferred during startup or
+    // an in-flight request still bypasses the background-refresh gate on replay.
+    var trigger: WorktreeInfoWatcherClient.RefreshTrigger
   }
 
   enum WorktreeCreationNameSource: Equatable {
@@ -460,21 +467,25 @@ struct RepositoriesFeature {
       name: String?,
       baseDirectory: URL
     )
-    case consumeSetupScript(Worktree.ID)
+    /// A worktree's creation flow settled: its first tab is hosted, or the
+    /// initial-tab bootstrap failed and it rests tab-less (a valid empty state).
+    /// Clears creation progress; idempotent, so a late or repeated signal is harmless.
+    case worktreeCreationSettled(Worktree.ID)
     case consumeTerminalFocus(Worktree.ID)
     case scriptCompleted(
-      worktreeID: Worktree.ID, kind: BlockingScriptKind, exitCode: Int?, tabId: TerminalTabID?)
+      worktreeID: Worktree.ID, kind: BlockingScriptKind, exitCode: Int?, tabId: TabID?)
     case requestArchiveWorktree(Worktree.ID, Repository.ID)
     case requestArchiveWorktrees([ArchiveWorktreeTarget])
     case archiveWorktreeConfirmed(Worktree.ID, Repository.ID, background: Bool = false)
-    case archiveScriptCompleted(worktreeID: Worktree.ID, exitCode: Int?, tabId: TerminalTabID?)
+    case archiveScriptCompleted(worktreeID: Worktree.ID, exitCode: Int?, tabId: TabID?)
     case archiveWorktreeApply(Worktree.ID, Repository.ID)
+    case archiveWorktreeCommit(Worktree.ID, Repository.ID)
     case archiveWorktreeApplied(Worktree.ID)
     case archiveWorktreeApplyFailed(Worktree.ID)
     case unarchiveWorktree(Worktree.ID)
     case requestDeleteSidebarItems([DeleteWorktreeTarget])
     case deleteSidebarItemConfirmed(Worktree.ID, Repository.ID, background: Bool = false)
-    case deleteScriptCompleted(worktreeID: Worktree.ID, exitCode: Int?, tabId: TerminalTabID?)
+    case deleteScriptCompleted(worktreeID: Worktree.ID, exitCode: Int?, tabId: TabID?)
     case deleteWorktreeApply(Worktree.ID, Repository.ID)
     case worktreeDeleted(
       Worktree.ID,
@@ -547,7 +558,7 @@ struct RepositoriesFeature {
     /// The resolution effect's result, merged into the map. The only writer of
     /// `openActionByRepositoryID`.
     case openActionsResolved([Repository.ID: OpenWorktreeAction])
-    case setMergedWorktreeAction(MergedWorktreeAction?)
+    case setMergedWorktreeAction(MergedWorktreeAction)
     case setAutoDeleteArchivedWorktreesAfterDays(AutoDeletePeriod?)
     case autoDeleteExpiredArchivedWorktrees
     case setMoveNotifiedWorktreeToTop(Bool)
@@ -604,7 +615,7 @@ struct RepositoriesFeature {
     case confirmDeleteSidebarItems([DeleteWorktreeTarget], disposition: DeleteDisposition)
     case confirmDeleteRepository(Repository.ID)
     case confirmRemoveFailedRepository(Repository.ID)
-    case viewTerminalTab(Worktree.ID, tabId: TerminalTabID)
+    case viewTerminalTab(Worktree.ID, tabId: TabID)
   }
 
   enum PullRequestAction: Equatable {
@@ -629,7 +640,7 @@ struct RepositoriesFeature {
       Worktree, repositoryID: Repository.ID, kind: BlockingScriptKind, script: String,
       focusing: Bool = true
     )
-    case selectTerminalTab(Worktree.ID, tabId: TerminalTabID)
+    case selectTerminalTab(Worktree.ID, tabId: TabID)
   }
 
   @Dependency(AnalyticsClient.self) private var analyticsClient
@@ -941,6 +952,14 @@ struct RepositoriesFeature {
         }
 
       case .archiveWorktreeApply(let worktreeID, let repositoryID):
+        // Deliver the commit from a Task so the teardown never runs on a
+        // synchronous UI send: the departing surface's isolated deinit, freed
+        // inside the still-live TCA task-local scope during the commit's
+        // `withAnimation` flush, aborts with an invalid free (issue #784). Keep
+        // this a pure forward; mutating here re-arms the crash.
+        return .run { send in await send(.archiveWorktreeCommit(worktreeID, repositoryID)) }
+
+      case .archiveWorktreeCommit(let worktreeID, let repositoryID):
         guard state.removingRepositoryIDs[repositoryID] == nil else {
           // Repo removal began while the archive ran; the archived end state would
           // vanish with it, so fail the ack instead of recording a false success.
@@ -950,7 +969,7 @@ struct RepositoriesFeature {
           let worktree = repository.worktrees[id: worktreeID]
         else {
           repositoriesLogger.warning(
-            "archiveWorktreeApply: worktree \(worktreeID) not found in repository \(repositoryID)"
+            "archiveWorktreeCommit: worktree \(worktreeID) not found in repository \(repositoryID)"
           )
           state.alert = messageAlert(
             title: "Archive failed",
@@ -2355,6 +2374,7 @@ struct RepositoriesFeature {
               repositoryID: repositoryID,
               repositoryRootURL: queued.repositoryRootURL,
               worktreeIDs: queued.worktreeIDs,
+              trigger: queued.trigger,
             )
           }
           state.queuedPullRequestRefreshByRepositoryID.removeAll()
@@ -2382,7 +2402,8 @@ struct RepositoriesFeature {
                 .worktreeInfoEvent(
                   .repositoryPullRequestRefresh(
                     repositoryRootURL: pending.repositoryRootURL,
-                    worktreeIDs: pending.worktreeIDs
+                    worktreeIDs: pending.worktreeIDs,
+                    trigger: pending.trigger
                   )
                 )
               )
@@ -2404,7 +2425,8 @@ struct RepositoriesFeature {
           .worktreeInfoEvent(
             .repositoryPullRequestRefresh(
               repositoryRootURL: pending.repositoryRootURL,
-              worktreeIDs: pending.worktreeIDs
+              worktreeIDs: pending.worktreeIDs,
+              trigger: pending.trigger
             )
           )
         )
@@ -2412,7 +2434,20 @@ struct RepositoriesFeature {
       case .worktreeBranchNameLoaded(let worktreeID, let name):
         state.updateWorktreeName(worktreeID, name: name)
         Self.syncSidebar(&state)
-        return .none
+        guard let repositoryID = state.repositoryID(containing: worktreeID),
+          let repository = state.repositories[id: repositoryID]
+        else {
+          return .none
+        }
+        return .send(
+          .worktreeInfoEvent(
+            .repositoryPullRequestRefresh(
+              repositoryRootURL: repository.rootURL,
+              worktreeIDs: repository.worktrees.map(\.id),
+              trigger: .automatic
+            )
+          )
+        )
 
       case .worktreeLineChangesLoaded(let worktreeID, let added, let removed):
         return state.updateWorktreeLineChangesEffect(
@@ -2425,6 +2460,14 @@ struct RepositoriesFeature {
         guard let repository = state.repositories[id: repositoryID] else {
           return .none
         }
+        // Read fresh, not the cached `@Shared(.repositorySettings)` a live terminal pins stale:
+        // an out-of-band `supacode.json` edit must not drive an automated archive or delete
+        // under an old policy. Falls back to the global action.
+        let repositorySettings = RepositorySettingsKey(
+          rootURL: repository.rootURL,
+          host: repository.host
+        ).currentSettings()
+        let resolvedMergedAction = repositorySettings.mergedWorktreeAction ?? state.mergedWorktreeAction
         let branchSnapshot = state.inFlightPullRequestBranchSnapshotsByRepositoryID[repositoryID] ?? [:]
         var archiveWorktreeIDs: [Worktree.ID] = []
         var deleteWorktreeIDs: [Worktree.ID] = []
@@ -2448,19 +2491,25 @@ struct RepositoriesFeature {
             )
           )
           let mergedLifecycle = state.sidebarItems[id: worktreeID]?.lifecycle ?? .idle
-          if let mergedAction = state.mergedWorktreeAction,
+          // Don't let a stale merge on a reused branch name auto-close a freshly recreated worktree (#794).
+          if resolvedMergedAction != .ignore,
             !previousMerged,
             nextMerged,
+            let mergedAt = pullRequest?.mergedAt,
+            let createdAt = worktree.createdAt,
+            mergedAt > createdAt,
             !state.isMainWorktree(worktree),
             !state.isWorktreeArchived(worktreeID),
             mergedLifecycle != .deleting,
             mergedLifecycle != .deletingScript
           {
-            switch mergedAction {
+            switch resolvedMergedAction {
             case .archive:
               archiveWorktreeIDs.append(worktreeID)
             case .delete:
               deleteWorktreeIDs.append(worktreeID)
+            case .ignore:
+              break
             }
           }
         }
@@ -2489,9 +2538,12 @@ struct RepositoriesFeature {
         let repoRoot = worktree.repositoryRootURL
         let repoHost = worktree.host
         let worktreeRoot = worktree.workingDirectory
+        // Consequence of an explicit PR action (merge / close / open), so it
+        // must refresh even when background refresh is off.
         let pullRequestRefresh = WorktreeInfoWatcherClient.Event.repositoryPullRequestRefresh(
           repositoryRootURL: repoRoot,
-          worktreeIDs: repository.worktrees.map(\.id)
+          worktreeIDs: repository.worktrees.map(\.id),
+          trigger: .manual
         )
         let branchName = pullRequest.headRefName ?? worktree.name
         let failingCheckDetailsURL = (pullRequest.statusCheckRollup?.checks ?? []).first {
@@ -3159,6 +3211,8 @@ struct RepositoriesFeature {
         state.inspectorPresented = presented
         return .none
 
+      // Only scheduled after an explicit PR action, to catch the settled state
+      // once GitHub reflects the mutation, so it refreshes as a manual trigger.
       case .delayedPullRequestRefresh(let worktreeID):
         guard let worktree = state.worktree(for: worktreeID),
           let repositoryID = state.repositoryID(containing: worktreeID),
@@ -3175,7 +3229,8 @@ struct RepositoriesFeature {
             .worktreeInfoEvent(
               .repositoryPullRequestRefresh(
                 repositoryRootURL: repositoryRootURL,
-                worktreeIDs: worktreeIDs
+                worktreeIDs: worktreeIDs,
+                trigger: .manual
               )
             )
           )
@@ -3212,7 +3267,18 @@ struct RepositoriesFeature {
               )
             }
           }
-        case .repositoryPullRequestRefresh(let repositoryRootURL, let worktreeIDs):
+          // Coalesce overlapping diffs for the same worktree: a burst of
+          // reconcile / FS events can't stack `git diff` processes.
+          .cancellable(id: CancelID.worktreeLineChanges(worktreeID), cancelInFlight: true)
+        case .repositoryPullRequestRefresh(let repositoryRootURL, let worktreeIDs, let trigger):
+          // An automatic refresh is suppressed while the user has background
+          // repository refresh off; a manual refresh always runs.
+          if trigger == .automatic {
+            @Shared(.settingsFile) var settingsFile
+            guard settingsFile.global.automaticRepositoryRefreshEnabled else {
+              return .none
+            }
+          }
           let worktrees = worktreeIDs.compactMap { state.worktree(for: $0) }
           guard let firstWorktree = worktrees.first,
             let repositoryID = state.repositoryID(containing: firstWorktree.id)
@@ -3239,6 +3305,7 @@ struct RepositoriesFeature {
                 repositoryID: repositoryID,
                 repositoryRootURL: repositoryRootURL,
                 worktreeIDs: worktreeIDs,
+                trigger: trigger,
               )
               return .none
             }
@@ -3274,6 +3341,7 @@ struct RepositoriesFeature {
               repositoryID: repositoryID,
               repositoryRootURL: repositoryRootURL,
               worktreeIDs: worktreeIDs,
+              trigger: trigger,
             )
             return .send(.refreshGithubIntegrationAvailability)
           case .checking:
@@ -3281,6 +3349,7 @@ struct RepositoriesFeature {
               repositoryID: repositoryID,
               repositoryRootURL: repositoryRootURL,
               worktreeIDs: worktreeIDs,
+              trigger: trigger,
             )
             return .none
           case .unavailable:
@@ -3288,6 +3357,7 @@ struct RepositoriesFeature {
               repositoryID: repositoryID,
               repositoryRootURL: repositoryRootURL,
               worktreeIDs: worktreeIDs,
+              trigger: trigger,
             )
             return .none
           case .disabled:
@@ -3315,19 +3385,8 @@ struct RepositoriesFeature {
         return .send(.loadPersistedRepositories)
 
       case .sidebarGroupingTogglesChanged:
-        // The post-reduce hook below picks up the toggle state and rebuilds.
-        // Auto-dismiss the highlight onboarding card when both toggles end up
-        // off; the `SidebarCommands` menu setters fire the same dismiss so
-        // toggling while the sidebar column is collapsed is also covered.
-        @Shared(.sidebarGroupPinnedRows) var groupPinned
-        @Shared(.sidebarGroupActiveRows) var groupActive
-        if !groupPinned, !groupActive {
-          @Shared(.appStorage("highlightRelevantOnboardingDismissedAt"))
-          var dismissedAt: Date = .distantPast
-          if !HighlightRelevantOnboardingCardView.isDismissed(at: dismissedAt) {
-            $dismissedAt.withLock { $0 = now }
-          }
-        }
+        // No-op handler: the post-reduce hook reads the grouping toggles and
+        // rebuilds `sidebarStructure`.
         return .none
 
       case .sidebarNestByBranchChanged:
@@ -4318,7 +4377,7 @@ struct RepositoriesFeature {
         }
         return .merge(effects)
 
-      case .consumeSetupScript(let id):
+      case .worktreeCreationSettled(let id):
         guard state.sidebarItems[id: id]?.lifecycle == .pending else { return .none }
         return .send(.sidebarItems(.element(id: id, action: .lifecycleChanged(.idle))))
 
@@ -4326,8 +4385,8 @@ struct RepositoriesFeature {
         return .send(.sidebarItems(.element(id: id, action: .focusTerminalConsumed)))
 
       case .requestArchiveWorktree, .requestArchiveWorktrees, .scriptCompleted, .archiveWorktreeConfirmed,
-        .archiveScriptCompleted, .archiveWorktreeApply, .archiveWorktreeApplied, .archiveWorktreeApplyFailed,
-        .unarchiveWorktree, .requestDeleteSidebarItems:
+        .archiveScriptCompleted, .archiveWorktreeApply, .archiveWorktreeCommit, .archiveWorktreeApplied,
+        .archiveWorktreeApplyFailed, .unarchiveWorktree, .requestDeleteSidebarItems:
         // Real handling lives in `worktreeRemovalReducer` (combined below) so `body` stays under the
         // type-checker's complexity limit; the `.alert(.presented(.confirm…))` arms there are matched
         // here by the trailing `.alert` catch-all returning `.none`.
@@ -4452,12 +4511,14 @@ struct RepositoriesFeature {
         state.renameBranchPrompt = nil
         // Refresh only the renamed row's PR; siblings still point at their
         // own branches. The HEAD watcher re-emits the name authoritatively.
+        // User-initiated rename, so it must refresh even with background refresh off.
         guard let repository = state.repositories[id: repositoryID] else { return .none }
         return .send(
           .worktreeInfoEvent(
             .repositoryPullRequestRefresh(
               repositoryRootURL: repository.rootURL,
-              worktreeIDs: [worktreeID]
+              worktreeIDs: [worktreeID],
+              trigger: .manual
             )
           )
         )
@@ -5214,6 +5275,13 @@ struct RepositoriesFeature {
       state.shouldRestoreLastFocusedWorktree = false
       if state.selection == nil, state.isSelectionValid(state.sidebar.focusedWorktreeID) {
         state.selection = state.sidebar.focusedWorktreeID.map(SidebarSelection.worktree)
+        // Arm the restored worktree's terminal focus synchronously with the
+        // selection so the detail view mounts with it already set; a follow-up
+        // effect would land after the view's first appearance and be missed,
+        // leaving keyboard focus on the sidebar.
+        if let focusedID = state.sidebar.focusedWorktreeID {
+          state.sidebarItems[id: focusedID]?.shouldFocusTerminal = true
+        }
       }
     }
     if state.selection == nil, state.shouldSelectFirstAfterReload {
@@ -5270,7 +5338,7 @@ struct RepositoriesFeature {
     kind: BlockingScriptKind,
     exitCode: Int,
     worktreeID: Worktree.ID,
-    tabId: TerminalTabID?,
+    tabId: TabID?,
     state: State
   ) -> AlertState<Alert> {
     let worktreeName = state.worktree(for: worktreeID)?.name
@@ -6212,17 +6280,24 @@ extension Dictionary where Key == Repository.ID, Value == RepositoriesFeature.Pe
     repositoryID: Repository.ID,
     repositoryRootURL: URL,
     worktreeIDs: [Worktree.ID],
+    trigger: WorktreeInfoWatcherClient.RefreshTrigger,
   ) {
     if var pending = self[repositoryID] {
       var seenWorktreeIDs = Set(pending.worktreeIDs)
       for worktreeID in worktreeIDs where seenWorktreeIDs.insert(worktreeID).inserted {
         pending.worktreeIDs.append(worktreeID)
       }
+      // A manual request anywhere in the merge wins, so the coalesced replay is
+      // never suppressed by the background-refresh gate.
+      if trigger == .manual {
+        pending.trigger = .manual
+      }
       self[repositoryID] = pending
     } else {
       self[repositoryID] = RepositoriesFeature.PendingPullRequestRefresh(
         repositoryRootURL: repositoryRootURL,
         worktreeIDs: worktreeIDs,
+        trigger: trigger,
       )
     }
   }

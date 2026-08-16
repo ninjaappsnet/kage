@@ -1,24 +1,24 @@
 ---
 name: supacode-deeplinks
-description: Control Kage with supacode:// URLs. Always prefer the supacode CLI when it is available; use deeplinks only from scripts, other apps, or terminals where the supacode CLI is not installed.
+description: Control Supacode with supacode:// URLs. Always prefer the supacode CLI when it is available; use deeplinks only from scripts, other apps, or terminals where the supacode CLI is not installed.
 ---
 
-# Kage Deeplinks
+# Supacode Deeplinks
 
-Use the `supacode://` URL scheme to control Kage from the terminal, scripts, or other apps. Dispatch a deeplink with `open`:
+Use the `supacode://` URL scheme to control Supacode from the terminal, scripts, or other apps. Dispatch a deeplink with `open`:
 
 ```sh
 open "supacode://worktree/$SUPACODE_WORKTREE_ID/run"
 ```
 
-Always prefer the `supacode` CLI when it is available (it is in every Kage terminal session). Reach for deeplinks only where the CLI is not installed, such as scripts and other apps running outside Kage.
+Always prefer the `supacode` CLI when it is available (it is in every Supacode terminal session). Reach for deeplinks only where the CLI is not installed, such as scripts and other apps running outside Supacode.
 
 ## CRITICAL: Archiving or Deleting the Current Worktree
 
 `supacode://worktree/<worktree_id>/archive` and `supacode://worktree/<worktree_id>/delete`
-remove the worktree from Kage's active terminals. Run against the worktree you are
+remove the worktree from Supacode's active terminals. Run against the worktree you are
 working in, they close your own surface: commands after the call do not run. Worktrees
-removed directly through Git disappear the same way once Kage refreshes.
+removed directly through Git disappear the same way once Supacode refreshes.
 `background=true` does not change this; it only leaves focus untouched.
 
 Make archiving or deleting your own worktree your FINAL operation. Finish all edits,
@@ -27,7 +27,7 @@ follow-up commands after it.
 
 ## Environment
 
-Each Kage terminal session exposes `SUPACODE_REPO_ID`, `SUPACODE_WORKTREE_ID`, `SUPACODE_TAB_ID`, and `SUPACODE_SURFACE_ID` as environment variables. Run `env | grep SUPACODE_` to discover the IDs for the current session.
+Each Supacode terminal session still exposes `SUPACODE_REPO_ID`, `SUPACODE_WORKTREE_ID`, `SUPACODE_TAB_ID`, and `SUPACODE_SURFACE_ID`, but these id variables are **deprecated and will be removed in the next release** (only `SUPACODE_SOCKET_PATH` is not). Prefer the `supacode` CLI, whose pane/tab commands resolve the focused target for you.
 
 Worktree and repository IDs must be percent-encoded (e.g. `/tmp/repo` becomes `%2Ftmp%2Frepo`); `SUPACODE_REPO_ID` and `SUPACODE_WORKTREE_ID` already are.
 
@@ -60,17 +60,44 @@ supacode://worktree/<worktree_id>/appearance?title=<title>&color=<value>
     # color accepts red|orange|yellow|green|teal|blue|purple|%23RRGGBB[AA]|none.
 ```
 
-## Tab & Surface
+## Tab
 
 ```
 supacode://worktree/<worktree_id>/tab/<tab_id>                     # Focus a tab.
-supacode://worktree/<worktree_id>/tab/new?input=<cmd>&id=<uuid>&title=<title>   # Create a tab.
+supacode://worktree/<worktree_id>/tab/new?input=<cmd>&id=<uuid>&title=<title>&pane=<pane_token>   # Create a tab; pane= anchors it in a pane (a pane, tab, or content id).
 supacode://worktree/<worktree_id>/tab/<tab_id>/rename?title=<title>             # Set the title override; empty clears.
+supacode://worktree/<worktree_id>/tab/<tab_id>/move?direction=left|right|up|down   # Move a tab into a new split.
 supacode://worktree/<worktree_id>/tab/<tab_id>/destroy                          # Close a tab.
-supacode://worktree/<worktree_id>/tab/<tab_id>/surface/<surface_id>?input=<cmd> # Focus a surface.
-supacode://worktree/<worktree_id>/tab/<tab_id>/surface/<surface_id>/split?direction=horizontal|vertical&input=<cmd>&id=<uuid>   # Split a surface.
-supacode://worktree/<worktree_id>/tab/<tab_id>/surface/<surface_id>/destroy     # Close a surface.
 ```
+
+## Pane
+
+A pane is a split-tree leaf holding a strip of tabs. `token` is a pane id, or
+the id of a tab or content the pane hosts.
+
+```
+supacode://worktree/<worktree_id>/pane/<pane_id>                   # Focus a pane by id.
+supacode://worktree/<worktree_id>/pane/focus?direction=left|right|up|down   # Focus a neighboring pane.
+supacode://worktree/<worktree_id>/pane/<token>/split?direction=horizontal|vertical&input=<cmd>&id=<uuid>   # Split a pane.
+supacode://worktree/<worktree_id>/pane/<token>/destroy            # Close a pane and all its tabs.
+supacode://worktree/<worktree_id>/pane/<token>/zoom               # Toggle a pane's zoom.
+supacode://worktree/<worktree_id>/pane/<token>/window             # Toggle a pane's window mode.
+supacode://worktree/<worktree_id>/pane/equalize                   # Equalize every split ratio.
+```
+
+## Surface (deprecated)
+
+A surface is now a tab's content. These routes are deprecated and **will be
+removed in the next release**; prefer `pane split` and the `tab` routes.
+
+```
+supacode://worktree/<worktree_id>/tab/<tab_id>/surface/<surface_id>?input=<cmd> # Deprecated: use the tab focus route.
+supacode://worktree/<worktree_id>/tab/<tab_id>/surface/<surface_id>/split?direction=horizontal|vertical&input=<cmd>&id=<uuid>   # Deprecated: use pane split.
+supacode://worktree/<worktree_id>/tab/<tab_id>/surface/<surface_id>/destroy     # Deprecated: use the tab destroy route.
+```
+
+Surface routes resolve `surface_id` first within the worktree; `tab_id` is only
+a disambiguation hint, so a surface that moved to another tab still resolves.
 
 ## Repository
 

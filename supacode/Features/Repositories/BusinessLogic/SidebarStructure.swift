@@ -486,7 +486,7 @@ extension RepositoriesFeature.Action {
       return []
 
     // Worktree-set changes inside an unchanged repo roster.
-    case .archiveWorktreeApply, .unarchiveWorktree,
+    case .archiveWorktreeCommit, .unarchiveWorktree,
       .deleteWorktreeApply, .worktreeDeleted,
       .createWorktreeInRepository, .createRandomWorktreeInRepository,
       .autoDeleteExpiredArchivedWorktrees:
@@ -502,6 +502,11 @@ extension RepositoriesFeature.Action {
     // Pure effect launcher: spawns the async SSH resolution, mutates no state.
     // The per-repo `.remoteRepositoryResolved` results recompute the caches.
     case .resolveRemoteRepositories:
+      return []
+
+    // Pure trampoline that defers the teardown to `archiveWorktreeCommit`
+    // (issue #784); mutates no state itself.
+    case .archiveWorktreeApply:
       return []
 
     // Pure signals observed by AppFeature to drain a parked CLI ack; no state.
@@ -521,7 +526,7 @@ extension RepositoriesFeature.Action {
     case .createRandomWorktreeSucceeded, .createRandomWorktreeFailed,
       .pendingWorktreeProgressUpdated, .cancelPendingWorktree,
       .archiveScriptCompleted, .deleteScriptCompleted, .scriptCompleted,
-      .consumeSetupScript,
+      .worktreeCreationSettled,
       .pinWorktree, .unpinWorktree:
       return [.sidebarStructure, .selectedWorktreeSlice, .sidebarSelectionSlice]
 

@@ -57,6 +57,48 @@ public nonisolated enum NotificationRetentionLimit: Int, Codable, CaseIterable, 
   }
 }
 
+/// How Supacode combines the user's own Ghostty config with the optional
+/// Supacode-specific config at `~/.supacode/ghostty.config`.
+public nonisolated enum GhosttyUserConfigMode: String, Codable, CaseIterable, Sendable {
+  /// Load the standard Ghostty config first, then layer the Supacode config on
+  /// top so it overrides conflicts and merges the rest. The default.
+  case mergeAfterDefault
+  /// Ignore the standard Ghostty config and read only the Supacode config. Falls
+  /// back to the standard config when the Supacode file is missing or empty.
+  case exclusive
+
+  public var label: String {
+    switch self {
+    case .mergeAfterDefault: "Merge after Ghostty config"
+    case .exclusive: "Use only the Supacode config"
+    }
+  }
+
+  public var subtitle: String {
+    switch self {
+    case .mergeAfterDefault: "Read your Ghostty config first, then apply the Supacode config on top."
+    case .exclusive: "Ignore your Ghostty config. Only the Supacode config is read."
+    }
+  }
+}
+
+/// Whether moving the pointer over a split pane focuses it (focus follows
+/// mouse), and for which content kinds. An enum rather than a Bool so future
+/// content kinds can opt in independently.
+public nonisolated enum HoverFocusMode: String, Codable, CaseIterable, Sendable {
+  /// Focus never follows the pointer. The default.
+  case never
+  /// Hovering a terminal split pane focuses it, within the key window.
+  case terminals
+
+  public var label: String {
+    switch self {
+    case .never: "Never"
+    case .terminals: "Terminals"
+    }
+  }
+}
+
 public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   public var appearanceMode: AppearanceMode
   public var defaultEditorID: String
@@ -73,7 +115,7 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   public var crashReportsEnabled: Bool
   public var githubIntegrationEnabled: Bool
   public var deleteBranchOnDeleteWorktree: Bool
-  public var mergedWorktreeAction: MergedWorktreeAction?
+  public var mergedWorktreeAction: MergedWorktreeAction
   public var promptForWorktreeCreation: Bool
   public var fetchOriginBeforeWorktreeCreation: Bool
   public var defaultWorktreeBaseDirectoryPath: String?
@@ -81,17 +123,27 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   public var copyUntrackedOnWorktreeCreate: Bool
   public var pullRequestMergeStrategy: PullRequestMergeStrategy
   public var terminalThemeSyncEnabled: Bool
+  /// Whether the optional `~/.supacode/ghostty.config` merges after the standard
+  /// Ghostty config or replaces it. Inert until that file exists.
+  public var ghosttyUserConfigMode: GhosttyUserConfigMode
   public var automatedActionPolicy: AutomatedActionPolicy
   public var autoDeleteArchivedWorktreesAfterDays: AutoDeletePeriod?
   public var shortcutOverrides: [AppShortcutID: AppShortcutOverride]
   /// Scripts shared across every repository. Always `.custom` kind.
   public var globalScripts: [ScriptDefinition]
+  /// Global fallback for opening a File Explorer file when the repo sets none, with its path in
+  /// `SUPACODE_FILE_PATH`. Empty uses the system default app. A hook, never in the script menu.
+  public var openFileScript: String
   public var richAgentNotificationsEnabled: Bool
   public var agentPresenceBadgesEnabled: Bool
   public var confirmQuitMode: ConfirmQuitMode
   /// When true, user-initiated closes ask for confirmation when a terminal
   /// surface has foreground work that Ghostty considers unsafe to interrupt.
+  /// Superseded by `confirmCloseTab`; read only by the legacy terminal path.
   public var confirmCloseSurface: Bool
+  /// How aggressively to confirm before closing a tab: only when the tab is
+  /// busy (default), always, or never.
+  public var confirmCloseTab: ConfirmCloseTabMode
   /// When true, quitting Supacode also closes every terminal tab and tears
   /// down zmx sessions, local and host-side, so nothing keeps running in the
   /// background. Default off because persistence is the headline feature.
@@ -104,6 +156,14 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   /// Beta: hidden terminal tabs release their renderer after a few minutes of
   /// inactivity and reconnect when viewed. On by default.
   public var terminalHibernationEnabled: Bool
+  /// Accessibility size for the app chrome's text. Drives the scale published at
+  /// each window root. Defaults to the unmodified system size.
+  public var chromeTextSize: ChromeTextSize
+  /// Gates all background repository polling (remote SSH, PR checks, reconcile).
+  /// On by default; disable to stop SSH passphrase prompts or GitHub rate limiting.
+  public var automaticRepositoryRefreshEnabled: Bool
+  /// Whether hovering a split pane focuses it (focus follows mouse). Off by default.
+  public var hoverFocusMode: HoverFocusMode
 
   public static let `default` = GlobalSettings(
     appearanceMode: .dark,
@@ -121,25 +181,29 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     crashReportsEnabled: true,
     githubIntegrationEnabled: true,
     deleteBranchOnDeleteWorktree: true,
-    mergedWorktreeAction: nil,
+    mergedWorktreeAction: .ignore,
     promptForWorktreeCreation: true,
     fetchOriginBeforeWorktreeCreation: true,
     copyIgnoredOnWorktreeCreate: false,
     copyUntrackedOnWorktreeCreate: false,
     pullRequestMergeStrategy: .merge,
     terminalThemeSyncEnabled: true,
+    ghosttyUserConfigMode: .mergeAfterDefault,
     automatedActionPolicy: .cliOnly,
     defaultWorktreeBaseDirectoryPath: nil,
     autoDeleteArchivedWorktreesAfterDays: nil,
     shortcutOverrides: [:],
     globalScripts: [],
+    openFileScript: "",
     richAgentNotificationsEnabled: true,
     agentPresenceBadgesEnabled: true,
     confirmQuitMode: .auto,
     confirmCloseSurface: true,
+    confirmCloseTab: .busy,
     terminateSessionsOnQuit: false,
     remoteSessionPersistenceEnabled: true,
-    appVisibility: .dockAndMenuBar
+    appVisibility: .dockAndMenuBar,
+    chromeTextSize: .default
   )
 
   public init(
@@ -158,26 +222,32 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     crashReportsEnabled: Bool,
     githubIntegrationEnabled: Bool,
     deleteBranchOnDeleteWorktree: Bool,
-    mergedWorktreeAction: MergedWorktreeAction? = nil,
+    mergedWorktreeAction: MergedWorktreeAction = .ignore,
     promptForWorktreeCreation: Bool,
     fetchOriginBeforeWorktreeCreation: Bool = true,
     copyIgnoredOnWorktreeCreate: Bool = false,
     copyUntrackedOnWorktreeCreate: Bool = false,
     pullRequestMergeStrategy: PullRequestMergeStrategy = .merge,
     terminalThemeSyncEnabled: Bool = true,
+    ghosttyUserConfigMode: GhosttyUserConfigMode = .mergeAfterDefault,
     automatedActionPolicy: AutomatedActionPolicy = .cliOnly,
     defaultWorktreeBaseDirectoryPath: String? = nil,
     autoDeleteArchivedWorktreesAfterDays: AutoDeletePeriod? = nil,
     shortcutOverrides: [AppShortcutID: AppShortcutOverride] = [:],
     globalScripts: [ScriptDefinition] = [],
+    openFileScript: String = "",
     richAgentNotificationsEnabled: Bool = true,
     agentPresenceBadgesEnabled: Bool = true,
     confirmQuitMode: ConfirmQuitMode = .auto,
     confirmCloseSurface: Bool = true,
+    confirmCloseTab: ConfirmCloseTabMode = .busy,
     terminateSessionsOnQuit: Bool = false,
     remoteSessionPersistenceEnabled: Bool = true,
     appVisibility: AppVisibility = .dockAndMenuBar,
-    terminalHibernationEnabled: Bool = true
+    terminalHibernationEnabled: Bool = true,
+    chromeTextSize: ChromeTextSize = .default,
+    automaticRepositoryRefreshEnabled: Bool = true,
+    hoverFocusMode: HoverFocusMode = .never
   ) {
     self.appearanceMode = appearanceMode
     self.defaultEditorID = defaultEditorID
@@ -201,19 +271,25 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     self.copyUntrackedOnWorktreeCreate = copyUntrackedOnWorktreeCreate
     self.pullRequestMergeStrategy = pullRequestMergeStrategy
     self.terminalThemeSyncEnabled = terminalThemeSyncEnabled
+    self.ghosttyUserConfigMode = ghosttyUserConfigMode
     self.automatedActionPolicy = automatedActionPolicy
     self.defaultWorktreeBaseDirectoryPath = defaultWorktreeBaseDirectoryPath
     self.autoDeleteArchivedWorktreesAfterDays = autoDeleteArchivedWorktreesAfterDays
     self.shortcutOverrides = shortcutOverrides
     self.globalScripts = globalScripts
+    self.openFileScript = openFileScript
     self.richAgentNotificationsEnabled = richAgentNotificationsEnabled
     self.agentPresenceBadgesEnabled = agentPresenceBadgesEnabled
     self.confirmQuitMode = confirmQuitMode
     self.confirmCloseSurface = confirmCloseSurface
+    self.confirmCloseTab = confirmCloseTab
     self.terminateSessionsOnQuit = terminateSessionsOnQuit
     self.remoteSessionPersistenceEnabled = remoteSessionPersistenceEnabled
     self.appVisibility = appVisibility
     self.terminalHibernationEnabled = terminalHibernationEnabled
+    self.chromeTextSize = chromeTextSize
+    self.automaticRepositoryRefreshEnabled = automaticRepositoryRefreshEnabled
+    self.hoverFocusMode = hoverFocusMode
   }
 
   /// Keys for reading renamed settings fields that no longer
@@ -279,21 +355,17 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     deleteBranchOnDeleteWorktree =
       try container.decodeIfPresent(Bool.self, forKey: .deleteBranchOnDeleteWorktree)
       ?? Self.default.deleteBranchOnDeleteWorktree
-    // `try?` intentionally swallows decoding errors (e.g. unrecognized raw values
-    // from a future app version) and falls through to the legacy migration path,
-    // which defaults to `nil`. Silently resetting the preference is acceptable
-    // because `nil` (do nothing) is the safest default.
+    // An unrecognized raw value (`try?`) or an absent key both resolve to `.ignore`
+    // (do nothing) via the legacy path, the safe default.
     if let action = try? container.decodeIfPresent(MergedWorktreeAction.self, forKey: .mergedWorktreeAction) {
       mergedWorktreeAction = action
+    } else if let legacyBool = try legacy.decodeIfPresent(
+      Bool.self,
+      forKey: LegacyCodingKey(stringValue: "automaticallyArchiveMergedWorktrees")!
+    ) {
+      mergedWorktreeAction = legacyBool ? .archive : Self.default.mergedWorktreeAction
     } else {
-      if let legacyBool = try legacy.decodeIfPresent(
-        Bool.self,
-        forKey: LegacyCodingKey(stringValue: "automaticallyArchiveMergedWorktrees")!
-      ) {
-        mergedWorktreeAction = legacyBool ? .archive : Self.default.mergedWorktreeAction
-      } else {
-        mergedWorktreeAction = Self.default.mergedWorktreeAction
-      }
+      mergedWorktreeAction = Self.default.mergedWorktreeAction
     }
     promptForWorktreeCreation =
       try container.decodeIfPresent(Bool.self, forKey: .promptForWorktreeCreation)
@@ -314,6 +386,11 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     terminalThemeSyncEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .terminalThemeSyncEnabled)
       ?? false
+    // Reject unrecognized values (and a mistyped key) rather than throwing, which
+    // would reset the whole file to defaults. Pre-feature files omit this key.
+    ghosttyUserConfigMode =
+      (try? container.decode(GhosttyUserConfigMode.self, forKey: .ghosttyUserConfigMode))
+      ?? Self.default.ghosttyUserConfigMode
     // Migrate from the old Bool `allowArbitraryDeeplinkInput` to the new enum.
     if let policy = try container.decodeIfPresent(AutomatedActionPolicy.self, forKey: .automatedActionPolicy) {
       automatedActionPolicy = policy
@@ -348,6 +425,9 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
       if script.name.isEmpty { script.name = ScriptKind.custom.defaultName }
       return script
     }
+    openFileScript =
+      try container.decodeIfPresent(String.self, forKey: .openFileScript)
+      ?? Self.default.openFileScript
     richAgentNotificationsEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .richAgentNotificationsEnabled)
       ?? Self.default.richAgentNotificationsEnabled
@@ -372,6 +452,15 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     confirmCloseSurface =
       try container.decodeIfPresent(Bool.self, forKey: .confirmCloseSurface)
       ?? Self.default.confirmCloseSurface
+    // Prefer the explicit mode; otherwise carry the legacy bool's intent
+    // (confirm-when-busy vs never), and default to `.busy`.
+    if let raw = try container.decodeIfPresent(String.self, forKey: .confirmCloseTab),
+      let mode = ConfirmCloseTabMode(rawValue: raw)
+    {
+      confirmCloseTab = mode
+    } else {
+      confirmCloseTab = confirmCloseSurface ? .busy : .never
+    }
     terminateSessionsOnQuit =
       try container.decodeIfPresent(Bool.self, forKey: .terminateSessionsOnQuit)
       ?? Self.default.terminateSessionsOnQuit
@@ -388,5 +477,22 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     terminalHibernationEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .terminalHibernationEnabled)
       ?? Self.default.terminalHibernationEnabled
+    // Old settings files predate this key; they migrate to the system size. An
+    // unrecognized value falls back the same way rather than throwing, which
+    // would reset the whole file to defaults.
+    chromeTextSize =
+      ((try? container.decodeIfPresent(String.self, forKey: .chromeTextSize)) ?? nil)
+      .flatMap(ChromeTextSize.init(rawValue:))
+      ?? Self.default.chromeTextSize
+    // Pre-feature files omit this key; background refresh defaults on.
+    automaticRepositoryRefreshEnabled =
+      try container.decodeIfPresent(Bool.self, forKey: .automaticRepositoryRefreshEnabled)
+      ?? Self.default.automaticRepositoryRefreshEnabled
+    // Decode the raw string so an unrecognized future mode falls back rather
+    // than throwing (which would reset the whole file to defaults).
+    hoverFocusMode =
+      ((try? container.decodeIfPresent(String.self, forKey: .hoverFocusMode)) ?? nil)
+      .flatMap(HoverFocusMode.init(rawValue:))
+      ?? Self.default.hoverFocusMode
   }
 }
