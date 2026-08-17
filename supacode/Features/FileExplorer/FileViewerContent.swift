@@ -35,6 +35,22 @@ final class FileViewerContent: TabContent {
   /// has no equivalent here, so this is what arms the confirmation.
   var isBusy: Bool { model.isDirty }
 
+  /// Discarded, not interrupted: there is no session to reattach to, so this
+  /// confirms even for a user who turned close confirmation off.
+  var closeDiscardsUnsavedWork: Bool { model.isDirty }
+
+  /// A write that did not land leaves the buffer dirty — a denied permission, or
+  /// the file having changed on disk since it was opened, which parks the save
+  /// behind the viewer's own conflict banner. Reporting the buffer's real state
+  /// rather than "I tried" is what keeps the close from proceeding anyway.
+  func saveUnsavedWork() -> Bool {
+    model.save()
+    return !model.isDirty
+  }
+
+  /// The renderer is the whole content; nothing survives it to be killed.
+  var hasKillableSession: Bool { false }
+
   /// Never, not "not yet": there is no session behind the renderer to survive a
   /// teardown, so a backgrounded viewer must not sit on a grace timer that
   /// re-arms on every window for the life of the app.

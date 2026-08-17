@@ -11,6 +11,20 @@ protocol TabContent: AnyObject {
   /// Whether closing now would interrupt real work (a terminal's foreground
   /// process); drives the busy-gated close confirmation.
   var isBusy: Bool { get }
+  /// Whether closing now would DISCARD work rather than interrupt it. `isBusy`
+  /// covers work the user can get back to — a process zmx keeps alive — which is
+  /// why turning close confirmation off is a reasonable thing to do. This covers
+  /// work that simply ceases to exist, an unsaved buffer, and therefore confirms
+  /// even when the user turned confirmation off.
+  var closeDiscardsUnsavedWork: Bool { get }
+  /// Persists what `closeDiscardsUnsavedWork` reports, ahead of a close. Returns
+  /// false when the write did not land, so the close is abandoned and the
+  /// content is left to surface its own error.
+  func saveUnsavedWork() -> Bool
+  /// Whether a session exists behind the renderer for `ContentSessionKiller` to
+  /// tear down. False for content that IS its renderer; killing a session that
+  /// never existed spawns a pointless subprocess on every close.
+  var hasKillableSession: Bool { get }
   /// Whether the renderer can be torn down with the session surviving (a
   /// terminal whose process lives in zmx).
   var isHibernatable: Bool { get }
@@ -38,6 +52,13 @@ protocol TabContent: AnyObject {
 extension TabContent {
   // Most content is never busy; terminals override with their process state.
   var isBusy: Bool { false }
+  // Only content holding an unwritten buffer can lose work to a close.
+  var closeDiscardsUnsavedWork: Bool { false }
+  // Nothing to write, so a save trivially succeeds.
+  func saveUnsavedWork() -> Bool { true }
+  // Assume a session until content says otherwise: a terminal the runtime has
+  // already forgotten still has a zmx session that must be killed.
+  var hasKillableSession: Bool { true }
   // Hibernation is opt-in: only content whose session outlives the renderer
   // may claim it.
   var isHibernatable: Bool { false }

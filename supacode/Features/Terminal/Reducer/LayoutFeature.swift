@@ -215,6 +215,8 @@ struct LayoutFeature {
 
     nonisolated enum Alert: Equatable, Sendable {
       case confirmClose(tabs: [TabID])
+      /// Write each target's pending buffer, then close the ones that landed.
+      case saveAndClose(tabs: [TabID])
     }
   }
 
@@ -338,6 +340,9 @@ struct LayoutFeature {
       case .alert(.presented(.confirmClose(let tabIDs))):
         state.alertPaneID = nil
         return closeTabs(&state, tabIDs: tabIDs)
+      case .alert(.presented(.saveAndClose(let tabIDs))):
+        state.alertPaneID = nil
+        return closeTabs(&state, tabIDs: savableTabs(in: state, tabIDs: tabIDs))
       case .alert:
         state.alertPaneID = nil
         return .none
@@ -428,20 +433,37 @@ extension LayoutFeature {
       }
     guard !targets.isEmpty else { return .none }
     let interrupts = targets.contains { closeWouldInterrupt(pane.tabs[id: $0]?.content) }
+    // Unsaved work outranks the setting: "never confirm" is a statement about
+    // interrupting work zmx keeps recoverable, not a licence to delete text.
+    let discardsUnsavedWork = targets.contains { closeDiscardsUnsavedWork(pane.tabs[id: $0]?.content) }
     @Shared(.settingsFile) var settingsFile: SettingsFile
-    let confirms: Bool =
-      switch settingsFile.global.confirmCloseTab {
-      case .always: true
-      case .never: false
-      case .busy: interrupts
-      }
+    let confirms: Bool
+    if discardsUnsavedWork {
+      confirms = true
+    } else {
+      confirms =
+        switch settingsFile.global.confirmCloseTab {
+        case .always: true
+        case .never: false
+        case .busy: interrupts
+        }
+    }
     guard confirms else { return closeTabs(&state, tabIDs: targets) }
     if let pending = state.alertPaneID, pending != pane.id {
       Self.logger.warning("Replacing pane \(pending.rawValue)'s pending close confirmation.")
     }
     state.alertPaneID = pane.id
-    state.alert = Self.closeConfirmationAlert(tabs: targets, interrupts: interrupts)
+    state.alert = Self.closeConfirmationAlert(
+      tabs: targets, interrupts: interrupts, discardsUnsavedWork: discardsUnsavedWork
+    )
     return .none
+  }
+
+  /// Whether closing this content would discard an unwritten buffer. Only live
+  /// content can hold one: a snapshot on disk is by definition already written.
+  private func closeDiscardsUnsavedWork(_ snapshot: ContentSnapshot?) -> Bool {
+    guard let snapshot, let content = contentRuntime.content(for: snapshot.id) else { return false }
+    return content.closeDiscardsUnsavedWork
   }
 
   /// Whether closing this content now would interrupt real work: live and
@@ -456,27 +478,56 @@ extension LayoutFeature {
     return content.kind == .terminal && content.renderer == nil
   }
 
-  private static func closeConfirmationAlert(tabs targets: [TabID], interrupts: Bool) -> AlertState<Action.Alert> {
+  static func closeConfirmationAlert(
+    tabs targets: [TabID],
+    interrupts: Bool,
+    discardsUnsavedWork: Bool = false
+  ) -> AlertState<Action.Alert> {
     AlertState {
       TextState(targets.count == 1 ? "Close Tab?" : "Close \(targets.count) Tabs?")
     } actions: {
-      ButtonState(role: .destructive, action: .confirmClose(tabs: targets)) {
-        TextState("Close")
+      // Saving is the safe default when a buffer is on the line, so it leads and
+      // the close becomes the destructive choice the user has to reach for.
+      if discardsUnsavedWork {
+        ButtonState(action: .saveAndClose(tabs: targets)) {
+          TextState("Save & Close")
+        }
+        ButtonState(role: .destructive, action: .confirmClose(tabs: targets)) {
+          TextState("Discard Changes")
+        }
+      } else {
+        ButtonState(role: .destructive, action: .confirmClose(tabs: targets)) {
+          TextState("Close")
+        }
       }
       ButtonState(role: .cancel) {
         TextState("Cancel")
       }
     } message: {
-      TextState(Self.closeConfirmationMessage(count: targets.count, interrupts: interrupts))
+      TextState(
+        Self.closeConfirmationMessage(
+          count: targets.count, interrupts: interrupts, discardsUnsavedWork: discardsUnsavedWork
+        )
+      )
     }
   }
 
-  private static func closeConfirmationMessage(count: Int, interrupts: Bool) -> String {
+  private static func closeConfirmationMessage(
+    count: Int,
+    interrupts: Bool,
+    discardsUnsavedWork: Bool
+  ) -> String {
+    // Unsaved changes lead: they are the only outcome here that cannot be undone.
+    if discardsUnsavedWork {
+      return count == 1
+        ? "This tab has unsaved changes. Closing without saving discards them."
+        : "These tabs have unsaved changes. Closing without saving discards them."
+    }
     switch (interrupts, count == 1) {
-    case (true, true): "This tab has work that closing would interrupt."
-    case (true, false): "These tabs have work that closing would interrupt."
-    case (false, true): "Closing will end this tab's session."
-    case (false, false): "Closing will end these tabs' sessions."
+    case (true, true): return "This tab has work that closing would interrupt."
+    case (true, false): return "These tabs have work that closing would interrupt."
+    case (false, true): return "Closing will end this tab's session."
+    case (false, false): return "Closing will end these tabs' sessions."
     }
   }
 
@@ -484,6 +535,18 @@ extension LayoutFeature {
   /// vanished ones no-ops.
   private func closeTabs(_ state: inout State, tabIDs: [TabID]) -> Effect<Action> {
     .merge(tabIDs.map { reduceCloseTab(&state, tabID: $0) })
+  }
+
+  /// Asks each target to write its pending buffer and returns the ones now safe
+  /// to close. A tab whose save failed is dropped so it stays open with its own
+  /// error on screen, rather than being closed on a write that never landed.
+  private func savableTabs(in state: State, tabIDs: [TabID]) -> [TabID] {
+    tabIDs.filter { tabID in
+      guard let contentID = state.layout.pane(containingTab: tabID)?.tabs[id: tabID]?.content.id,
+        let content = contentRuntime.content(for: contentID)
+      else { return true }
+      return content.saveUnsavedWork()
+    }
   }
 
   private func reduceContentRequestedNewTab(_ state: inout State, contentID: ContentID) -> Effect<Action> {
@@ -1079,10 +1142,18 @@ extension LayoutFeature {
   /// cannot abandon a half-killed session; a cancelled effect confirms the
   /// tombstone straight on the runtime instead of leaving it stale.
   private func reap(_ contentID: ContentID, worktree worktreeID: Worktree.ID) -> Effect<Action> {
+    // Read before removing: the next line is what makes the runtime forget it.
+    // Absent content still kills, since a terminal restored from a stored layout
+    // has a real zmx session the runtime never registered.
+    let killsSession = contentRuntime.content(for: contentID)?.hasKillableSession ?? true
     contentRuntime.remove(contentID, tombstone: true)
     return .run { [contentRuntime, sessionKiller] send in
-      let kill = Task { await sessionKiller.kill(contentID, worktreeID) }
-      await kill.value
+      // The tombstone is confirmed either way: it is the runtime's gate against
+      // re-provisioning the id, not a record of a kill.
+      if killsSession {
+        let kill = Task { await sessionKiller.kill(contentID, worktreeID) }
+        await kill.value
+      }
       // Confirm straight on the runtime: a layout detached mid-kill (prune)
       // would drop the action below and leak the tombstone forever.
       await contentRuntime.confirmKill(contentID)
