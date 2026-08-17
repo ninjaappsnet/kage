@@ -182,8 +182,10 @@ final class WorktreeContentHost {
 
   var allTabsDormant: Bool {
     guard let layout = layout(), !layout.panes.isEmpty else { return false }
+    // Renderer existence, not the terminal cast: a live non-terminal renderer
+    // is not asleep, and casting would mark its worktree dormant.
     return layout.panes.allSatisfy { pane in
-      pane.tabs.allSatisfy { liveSurface($0.content.id.rawValue) == nil }
+      pane.tabs.allSatisfy { isDormantSurface($0.content.id.rawValue) }
     }
   }
 

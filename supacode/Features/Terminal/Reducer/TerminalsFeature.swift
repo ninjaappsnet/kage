@@ -213,8 +213,13 @@ extension TerminalsFeature {
             state.wakeRequestedTabs.remove(tab.id)
             guard enabled, !state.hibernationArmedTabs.contains(tab.id) else { continue }
             // Arm only live renderers; hibernated tabs have nothing to tear
-            // down and re-arm on wake through this same funnel.
-            guard contentRuntime.content(for: tab.content.id)?.renderer != nil else { continue }
+            // down and re-arm on wake through this same funnel. Content that
+            // can never hibernate is skipped outright, or its timer would
+            // re-arm on every window forever.
+            guard let content = contentRuntime.content(for: tab.content.id),
+              content.renderer != nil,
+              content.supportsHibernation
+            else { continue }
             state.hibernationArmedTabs.insert(tab.id)
             effects.append(armGraceTimer(worktreeID: layout.id, tabID: tab.id))
           } else if contentNeedsWake(tab) {
@@ -284,6 +289,12 @@ extension TerminalsFeature {
       // A pending close confirmation must keep its target live; re-arm.
       state.hibernationArmedTabs.insert(tabID)
       return armGraceTimer(worktreeID: worktreeID, tabID: tabID)
+    }
+    // A late-registered content that can never hibernate: drop the timer rather
+    // than re-arm it, since the eligibility flip below can never come.
+    guard contentRuntime.content(for: tab.content.id)?.supportsHibernation != false else {
+      state.hibernationDeferralLogged.remove(tabID)
+      return .none
     }
     guard contentRuntime.content(for: tab.content.id)?.isHibernatable == true else {
       // Still hidden but momentarily ineligible; re-arm so a later

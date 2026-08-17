@@ -14,6 +14,12 @@ protocol TabContent: AnyObject {
   /// Whether the renderer can be torn down with the session surviving (a
   /// terminal whose process lives in zmx).
   var isHibernatable: Bool { get }
+  /// Whether this content could EVER hibernate. `isHibernatable` is allowed to
+  /// be transiently false for content that can — a terminal before its surface
+  /// spawns — and the grace timer re-arms and waits it out. This is false only
+  /// for content with no session behind the renderer at all, where waiting is
+  /// pointless and the timer would re-arm forever.
+  var supportsHibernation: Bool { get }
   /// Spawns the session eagerly at an explicit geometry; a second call while
   /// the renderer is alive is a no-op.
   func startSession(at geometry: ContentGeometry)
@@ -35,6 +41,9 @@ extension TabContent {
   // Hibernation is opt-in: only content whose session outlives the renderer
   // may claim it.
   var isHibernatable: Bool { false }
+  // Waiting is the safe default: content that is merely not eligible yet keeps
+  // its grace timer. Opt out only when eligibility can never arrive.
+  var supportsHibernation: Bool { true }
   // Renderless content has nothing to release.
   func tearDown() {}
   // Chrome is opt-in per content kind.
