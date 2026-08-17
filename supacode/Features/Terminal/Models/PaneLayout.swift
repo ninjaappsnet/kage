@@ -29,6 +29,8 @@ nonisolated struct PaneID: Hashable, Identifiable, Codable, Sendable {
 /// What kind of content a tab hosts; additive for future kinds.
 nonisolated enum ContentKind: String, Codable, Sendable {
   case terminal
+  /// Fork-owned: a file preview / editor tab. See `FileViewerContentState`.
+  case fileViewer
 }
 
 /// How a command-running terminal launches (scripts, prompts). Blocking
@@ -95,10 +97,12 @@ nonisolated struct TerminalContentState: Equatable, Codable, Sendable {
 /// Kind-keyed content payload; each case owns its kind's persisted state.
 nonisolated enum ContentState: Equatable, Codable, Sendable {
   case terminal(TerminalContentState)
+  case fileViewer(FileViewerContentState)
 
   private enum CodingKeys: String, CodingKey {
     case kind
     case terminal
+    case fileViewer
   }
 
   init(from decoder: any Decoder) throws {
@@ -106,6 +110,8 @@ nonisolated enum ContentState: Equatable, Codable, Sendable {
     switch try container.decode(ContentKind.self, forKey: .kind) {
     case .terminal:
       self = .terminal(try container.decode(TerminalContentState.self, forKey: .terminal))
+    case .fileViewer:
+      self = .fileViewer(try container.decode(FileViewerContentState.self, forKey: .fileViewer))
     }
   }
 
@@ -115,12 +121,16 @@ nonisolated enum ContentState: Equatable, Codable, Sendable {
     case .terminal(let state):
       try container.encode(ContentKind.terminal, forKey: .kind)
       try container.encode(state, forKey: .terminal)
+    case .fileViewer(let state):
+      try container.encode(ContentKind.fileViewer, forKey: .kind)
+      try container.encode(state, forKey: .fileViewer)
     }
   }
 
   var kind: ContentKind {
     switch self {
     case .terminal: .terminal
+    case .fileViewer: .fileViewer
     }
   }
 
@@ -128,6 +138,9 @@ nonisolated enum ContentState: Equatable, Codable, Sendable {
   var freshSeed: ContentState {
     switch self {
     case .terminal: .terminal(TerminalContentState(workingDirectory: nil))
+    // A viewer's "state" is the file it points at; a seed without one would be
+    // a tab showing nothing, so the path is what carries over.
+    case .fileViewer(let state): .fileViewer(state)
     }
   }
 
@@ -136,6 +149,8 @@ nonisolated enum ContentState: Equatable, Codable, Sendable {
   var isEphemeral: Bool {
     switch self {
     case .terminal(let state): state.launch?.bypassZmx == true
+    // A file on disk outlives the app; the tab restores by re-reading it.
+    case .fileViewer: false
     }
   }
 }

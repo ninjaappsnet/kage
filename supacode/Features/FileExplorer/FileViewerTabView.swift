@@ -1,44 +1,20 @@
 import AppKit
-import Sharing
 import SwiftUI
 
-/// Right-docked file viewer/editor, modeled on Warp's file pane. Opened when a
-/// text file is selected in the explorer. Markdown renders with a Rendered/Raw
+/// The body of a file-viewer tab. Markdown and HTML render with a Rendered/Raw
 /// toggle (Raw is the editable source); other text files open in a
-/// syntax-highlighted editor. Saves explicitly with ⌘S. Width persists across
-/// launches.
-struct FileViewerPanel: View {
+/// syntax-highlighted editor. Saves explicitly with ⌘S.
+///
+/// Owns no closing or sizing chrome: the tab strip provides both, and the tab's
+/// close confirmation comes from `FileViewerContent.isBusy` rather than a
+/// dialog this view raises.
+struct FileViewerTabView: View {
   @Bindable var model: FileViewerModel
-  let onClose: () -> Void
 
-  @State private var width: CGFloat = 420
-  @State private var showCloseConfirm = false
   /// Gates the real renderer behind one runloop turn so the spinner paints first.
   @State private var isContentMounted = false
-  @Shared(.appStorage("fileViewerWidth")) private var storedWidth = 420.0
-
-  private static let minWidth: CGFloat = 280
-  private static let maxWidth: CGFloat = 900
 
   var body: some View {
-    HStack(spacing: 0) {
-      resizeHandle
-      panelBody
-        // Ideal-not-rigid width: the pane docks as a safe-area inset, so a rigid
-        // `.frame(width:)` adds its full width to the window's own minimum —
-        // opening a file grew the window and left it stuck at that width. With a
-        // zero minimum the pane still renders at `width` whenever there is room
-        // and yields instead of the window when there isn't.
-        .frame(minWidth: 0, idealWidth: width, maxWidth: width)
-    }
-    .onAppear { width = Self.clamp(CGFloat(storedWidth)) }
-    // Every new file goes back through the spinner: the next document may be the
-    // slow one, and the pane is reused rather than rebuilt.
-    .onChange(of: model.fileURL) { _, _ in isContentMounted = false }
-    .busyCursor(model.isPreparingContent)
-  }
-
-  private var panelBody: some View {
     VStack(spacing: 0) {
       header
       Divider()
@@ -53,32 +29,11 @@ struct FileViewerPanel: View {
       content
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    .background(.bar)
-    .onKeyPress(.escape) {
-      requestClose()
-      return .handled
-    }
-    .confirmationDialog(
-      "Close without saving changes to “\(model.displayName)”?",
-      isPresented: $showCloseConfirm,
-      titleVisibility: .visible
-    ) {
-      Button("Save & Close") {
-        model.save()
-        if !model.isDirty { onClose() }
-      }
-      Button("Discard Changes", role: .destructive) { onClose() }
-      Button("Cancel", role: .cancel) {}
-    }
-  }
-
-  /// Close, but guard unsaved edits behind a confirmation so they aren't lost.
-  private func requestClose() {
-    if model.isDirty {
-      showCloseConfirm = true
-    } else {
-      onClose()
-    }
+    .background(.background)
+    // Every new file goes back through the spinner: the next document may be the
+    // slow one, and the view is reused rather than rebuilt.
+    .onChange(of: model.fileURL) { _, _ in isContentMounted = false }
+    .busyCursor(model.isPreparingContent)
   }
 
   private var headerIcon: String {
@@ -89,6 +44,9 @@ struct FileViewerPanel: View {
     }
   }
 
+  /// The tab already shows the file name, so this row leads with the full path
+  /// instead of repeating it — a viewer tab and a terminal tab in the same strip
+  /// look alike, and the path is what tells them apart.
   private var header: some View {
     HStack(spacing: 6) {
       Image(systemName: headerIcon)
@@ -137,12 +95,6 @@ struct FileViewerPanel: View {
       }
       .buttonStyle(.borderless)
       .help("Reload from Disk")
-      Button(action: requestClose) {
-        Image(systemName: "xmark")
-          .accessibilityLabel("Close File Viewer")
-      }
-      .buttonStyle(.borderless)
-      .help("Close File Viewer (Esc)")
     }
     .imageScale(.medium)
     .padding(.horizontal, 10)
@@ -186,7 +138,7 @@ struct FileViewerPanel: View {
     if isContentMounted {
       loadedContent
         // Fires after the (potentially multi-second) first layout of the real
-        // renderer, which is the moment the pane is genuinely usable.
+        // renderer, which is the moment the tab is genuinely usable.
         .onAppear { model.contentDidRender() }
     } else {
       preparingPlaceholder
@@ -195,7 +147,7 @@ struct FileViewerPanel: View {
 
   /// Drawn in the frame right after a file is opened, before the real renderer is
   /// mounted. Rendering a long document blocks the main thread for seconds, so
-  /// without this the pane itself can't paint and the click looks ignored.
+  /// without this the tab itself can't paint and the click looks ignored.
   private var preparingPlaceholder: some View {
     VStack(spacing: 10) {
       ProgressView()
@@ -270,36 +222,9 @@ struct FileViewerPanel: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
-  private var resizeHandle: some View {
-    ZStack {
-      Divider()
-      Color.clear
-        .frame(width: 10)
-        .contentShape(Rectangle())
-        .onHover { hovering in
-          if hovering { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-        }
-        .gesture(
-          DragGesture(minimumDistance: 1)
-            .onChanged { value in
-              // Handle is on the pane's left edge, so dragging left widens it.
-              width = Self.clamp(width - value.translation.width)
-            }
-            .onEnded { _ in
-              $storedWidth.withLock { $0 = Double(width) }
-            }
-        )
-    }
-    .frame(width: 10)
-  }
-
   private static let byteFormatter: ByteCountFormatter = {
     let formatter = ByteCountFormatter()
     formatter.countStyle = .file
     return formatter
   }()
-
-  private static func clamp(_ value: CGFloat) -> CGFloat {
-    min(max(value, minWidth), maxWidth)
-  }
 }

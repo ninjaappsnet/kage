@@ -302,6 +302,8 @@ struct TerminalContentBuilder {
       switch request.content {
       case .terminal(let terminalState):
         terminalContent(request, terminalState: terminalState)
+      case .fileViewer(let viewerState):
+        FileViewerTabOpening.makeContent(id: request.contentID, state: viewerState)
       }
     }
   }

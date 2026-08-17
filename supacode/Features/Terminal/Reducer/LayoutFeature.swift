@@ -1109,10 +1109,11 @@ extension LayoutFeature {
 }
 
 extension ContentState {
-  /// The terminal payload; the only kind today.
+  /// The terminal payload, nil for every other kind.
   fileprivate var terminalState: TerminalContentState? {
     switch self {
     case .terminal(let state): state
+    case .fileViewer: nil
     }
   }
 }

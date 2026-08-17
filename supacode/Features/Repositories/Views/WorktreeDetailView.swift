@@ -16,7 +16,6 @@ struct WorktreeDetailView: View {
   @Shared(.appStorage("worktreeRowHideSubtitleOnMatch")) private var hideSubtitleOnMatch = true
   @Shared(.appStorage("fileExplorerVisible")) private var isFileExplorerVisible = false
   @Shared(.settingsFile) private var settingsFile: SettingsFile
-  @State private var fileViewer = FileViewerModel()
 
   private var agentBadgesEnabled: Bool { settingsFile.global.agentPresenceBadgesEnabled }
 
@@ -339,48 +338,32 @@ struct WorktreeDetailView: View {
             store.send(.repositories(.consumeTerminalFocus(selectedWorktree.id)))
           }
         }
-        // The explorer (left) and viewer (right) dock as safe-area insets rather
-        // than wrapping the terminal in an `HStack`, so the terminal block above
-        // stays byte-identical to upstream and this hot view merge-stays clean
-        // (see "Minimizing Upstream Merge Conflicts" in AGENTS.md). File explorer
-        // is local-worktrees-only — a remote worktree has no on-disk path to
+        // The explorer docks as a safe-area inset rather than wrapping the
+        // terminal in an `HStack`, so the terminal block above stays
+        // byte-identical to upstream and this hot view merge-stays clean (see
+        // "Minimizing Upstream Merge Conflicts" in AGENTS.md). File explorer is
+        // local-worktrees-only — a remote worktree has no on-disk path to
         // browse; its root follows the active terminal's pwd (OSC 7) and falls
-        // back to the worktree dir until the shell reports one.
+        // back to the worktree dir until the shell reports one. Opening a file
+        // mints a viewer tab in the layout, so there is no viewer inset here.
         .safeAreaInset(edge: .leading, spacing: 0) {
           if isFileExplorerVisible, let fallbackRoot = selectedWorktree.localWorkingDirectory {
             FileExplorerPanel(
               rootURL: terminalManager.focusedSurfacePwd(for: selectedWorktree.id) ?? fallbackRoot,
-              openFileURL: fileViewer.fileURL,
-              onOpenFile: { fileViewer.open($0) },
+              openFileURL: terminalManager.selectedViewerFileURL(for: selectedWorktree.id),
+              onOpenFile: { terminalManager.openFileInViewerTab($0, in: selectedWorktree) },
               onClose: toggleFileExplorer
             )
             .id(selectedWorktree.id)
             .transition(.move(edge: .leading).combined(with: .opacity))
-            // Clicks are swallowed anyway while the first render blocks the main
-            // thread; disabling makes that visible instead of silently queueing
-            // taps that all fire at once when the pane finally opens.
-            .disabled(fileViewer.isPreparingContent)
           }
         }
-        .safeAreaInset(edge: .trailing, spacing: 0) {
-          if fileViewer.hasFile {
-            FileViewerPanel(model: fileViewer, onClose: { fileViewer.close() })
-              .transition(.move(edge: .trailing).combined(with: .opacity))
-          }
-        }
-        // A file open in the viewer belongs to the previous worktree's tree;
-        // close it when the selection changes so it never shows a stale file.
-        .onChange(of: selectedWorktree.id) { _, _ in fileViewer.close() }
       } else if !repositories.isInitialLoadComplete {
         DetailPlaceholderView()
       } else {
         EmptyStateView(store: store.scope(state: \.repositories, action: \.repositories))
       }
     }
-    // Lives on the Group, not inside the `if let` branch: a workspace switch
-    // that leaves nothing selected tears that branch down in the same SwiftUI
-    // transaction, so an onChange inside it would never fire.
-    .modifier(CloseFileViewerOnWorkspaceSwitch(close: { fileViewer.close() }))
   }
 
   /// Whether the selected worktree has a focused tab to act on, so Close Tab /
