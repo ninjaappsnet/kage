@@ -510,9 +510,20 @@ struct AppShortcutsTests {
     #expect(warnings[.closeTab]?.contains("Run Script") == true)
   }
 
+  /// Keyed on the binding, not on `display`. A display string comes out of
+  /// `UCKeyTranslate` against the *active keyboard layout*, which a CI runner
+  /// with no GUI input source does not have — it falls back to uppercasing the
+  /// character, and two distinct bindings collapse onto one string. That made
+  /// this pass on a developer's Mac and fail on the release runner, blocking
+  /// the release over a conflict that does not exist. `conflictWarnings` keys on
+  /// the binding for the same reason; see the note there.
   @Test func defaultShortcutChordsAreUnique() {
-    let displays = AppShortcuts.all.compactMap { $0.effective(from: [:])?.display }
-    #expect(Set(displays).count == displays.count)
+    let bindings = AppShortcuts.all.compactMap { shortcut -> String? in
+      guard let effective = shortcut.effective(from: [:]) else { return nil }
+      return "\(String(effective.keyEquivalent.character).lowercased())|\(effective.modifiers.rawValue)"
+    }
+    let duplicates = Dictionary(grouping: bindings, by: { $0 }).filter { $0.value.count > 1 }.keys.sorted()
+    #expect(duplicates.isEmpty, "default shortcuts share a chord: \(duplicates)")
   }
 
   // MARK: - Disabled-by-default round trip.

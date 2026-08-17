@@ -53,6 +53,11 @@ jobs:
         with:
           submodules: recursive
       - uses: ./.github/actions/setup-macos
+        with:
+          # The remote-shell quoting suite runs its generated ssh command through
+          # a real fish parser. Without this the whole suite goes red here, which
+          # blocks the stable release — `ci.yml` has always passed it.
+          install-fish: true
       - parallel:
           - run: make lint
           - run: make inspect-dependencies
