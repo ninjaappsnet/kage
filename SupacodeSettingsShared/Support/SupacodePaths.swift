@@ -3,7 +3,7 @@ import Foundation
 public nonisolated enum SupacodePaths {
   public static var baseDirectory: URL {
     FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".supacode", directoryHint: .isDirectory)
+      .appending(path: KageBrand.baseDirectoryName, directoryHint: .isDirectory)
   }
 
   public static var reposDirectory: URL {
@@ -28,7 +28,7 @@ public nonisolated enum SupacodePaths {
       root = FileManager.default.homeDirectoryForCurrentUser
         .appending(path: ".config", directoryHint: .isDirectory)
     }
-    return root.appending(path: "supacode", directoryHint: .isDirectory)
+    return root.appending(path: KageBrand.configDirectoryName, directoryHint: .isDirectory)
   }
 
   public static func repositoryDirectory(for rootURL: URL) -> URL {
@@ -243,7 +243,8 @@ public nonisolated enum SupacodePaths {
   }
 
   public static func repositorySettingsURL(for rootURL: URL) -> URL {
-    rootURL.standardizedFileURL.appending(path: "supacode.json", directoryHint: .notDirectory)
+    rootURL.standardizedFileURL
+      .appending(path: KageBrand.repositorySettingsFileName, directoryHint: .notDirectory)
   }
 
   private static func repositoryDirectoryName(for rootURL: URL) -> String {

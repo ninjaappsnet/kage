@@ -127,7 +127,11 @@ enum SettingsRelocationMigrator {
     // Re-seed while any settings slice is missing, so a resumed run rewrites a
     // partially-written store (config alone existing must not block routes /
     // repositories). Checked through `settingsFileStorage`, which writes them.
-    guard !settingsStoreComplete() else { return [] }
+    // A store that is complete but empty while the legacy file still lists
+    // repositories is re-seeded too: "all three files decode" is not the same as
+    // "the data landed", and stamping the marker over that strands the real data
+    // behind a migration that never runs again (`SettingsStoreRecovery`).
+    guard !settingsStoreComplete() || storeLacksLegacyRepositories(fileSystem: fileSystem) else { return [] }
     guard let data = fileSystem.readData(SupacodePaths.legacySettingsURL) else { return [] }
     guard let legacy = try? JSONDecoder().decode(SettingsFile.self, from: data) else {
       logger.error("Legacy settings.json present but undecodable; leaving it in place, not seeding.")
@@ -314,6 +318,13 @@ enum SettingsRelocationMigrator {
     // write retries next launch instead of locking in a partial relocation. A
     // corrupt sidebar / layouts (safely preserved in place) does not block it.
     guard settingsStoreComplete() else { return [] }
+    // Completeness is structural; this is the content check. Marking a store done
+    // while the legacy file still holds repositories it doesn't is what loses the
+    // data, because the marker also authorizes retiring that legacy file.
+    guard !storeLacksLegacyRepositories(fileSystem: fileSystem) else {
+      logger.error("Refusing to mark the relocation complete: the new store is empty but settings.json is not.")
+      return ["Your repository list did not migrate, so the migration will retry on next launch."]
+    }
     do {
       try fileSystem.writeData(Data(), SupacodePaths.relocationMarkerURL)
       return []

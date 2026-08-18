@@ -135,7 +135,20 @@ struct SupacodeApp: App {
     // sidebar / layouts into UserDefaults. Never throws; the underlying data is
     // always preserved in place, so a partial failure only defers cleanup and is
     // surfaced to the user below.
-    let relocationOutcome = SettingsRelocationMigrator.run()
+    // `xcodebuild test` launches this app host, so without this guard a test run
+    // migrates the developer's real `~` — which is how a marked-complete-but-empty
+    // store got stamped in the first place.
+    let isTestHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    // Kage stores its config under its own brand; move an upstream-branded tree
+    // (`~/.supacode`, `~/.config/supacode`, `<repo>/supacode.json`) across first so
+    // the relocation below only ever sees branded paths.
+    if !isTestHost {
+      KageBrandMigrator.run()
+      // Undo a relocation that marked itself complete over an empty store before the
+      // relocation runs, so it re-seeds from the restored files on this same launch.
+      SettingsStoreRecovery.repairVacantStore()
+    }
+    let relocationOutcome = isTestHost ? .noLegacyData : SettingsRelocationMigrator.run()
     @Shared(.settingsFile) var settingsFile
     let initialSettings = settingsFile.global
     let infoDictionary = Bundle.main.infoDictionary ?? [:]

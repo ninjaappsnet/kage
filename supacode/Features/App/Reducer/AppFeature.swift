@@ -1388,11 +1388,11 @@ struct AppFeature {
           let detail = problems.isEmpty ? "" : "\n\n" + problems.joined(separator: "\n")
           return TextState(
             """
-            Kage couldn't finish moving your settings to ~/.config/supacode. \
-            Your existing settings are safe and untouched in ~/.supacode (and ~/.supacode/.backup).\(detail)
+            Kage couldn't finish moving your settings to ~/.config/kage. \
+            Your existing settings are safe and untouched in ~/.kage (and ~/.kage/.backup).\(detail)
 
             This is usually low disk space or a permissions issue. Free up space or check \
-            permissions on ~/.config/supacode, then relaunch. Kage will retry automatically.
+            permissions on ~/.config/kage, then relaunch. Kage will retry automatically.
             """
           )
         }
