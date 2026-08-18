@@ -229,7 +229,7 @@ private struct SupacodeConfigMissingRow: View {
   var body: some View {
     LabeledContent {
       Button("Create and Open", action: onCreate)
-        .help("Create ~/.supacode/ghostty.config and open it in your editor")
+        .help("Create ~/.config/kage/config.ghostty and open it in your editor")
     } label: {
       Text("Kage config")
       Text("An extra Ghostty config applied only inside Kage.")

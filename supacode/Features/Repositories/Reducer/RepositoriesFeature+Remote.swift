@@ -580,15 +580,22 @@ extension RepositoriesFeature {
     shell: ShellClient? = nil
   ) async -> (perRepo: String?, global: String?) {
     let shell = shell ?? .ssh(host: host)
-    let repoSettingsPath = repoRoot.appending(path: "supacode.json").path(percentEncoded: false)
+    let repoSettingsPath = repoRoot.appending(path: KageBrand.repositorySettingsFileName)
+      .path(percentEncoded: false)
+    let legacyRepoSettingsPath = repoRoot.appending(path: KageBrand.legacyRepositorySettingsFileName)
+      .path(percentEncoded: false)
     let quotedRepoSettings = "'" + repoSettingsPath.replacing("'", with: "'\\''") + "'"
+    let quotedLegacyRepoSettings = "'" + legacyRepoSettingsPath.replacing("'", with: "'\\''") + "'"
     // `|| true` keeps a missing file a clean empty section rather than a non-zero exit.
     // Only honor `$XDG_CONFIG_HOME` when absolute, mirroring `SupacodePaths`.
     let script =
-      "echo '===SUPACODE-REPO==='; cat \(quotedRepoSettings) 2>/dev/null || true; "
+      "echo '===SUPACODE-REPO==='; cat \(quotedRepoSettings) 2>/dev/null "
+      + "|| cat \(quotedLegacyRepoSettings) 2>/dev/null || true; "
       + #"echo '===SUPACODE-GLOBAL==='; cfg="$HOME/.config"; "#
       + #"case "$XDG_CONFIG_HOME" in /*) cfg="$XDG_CONFIG_HOME";; esac; "#
-      + #"cat "$cfg/supacode/config.json" 2>/dev/null || cat "$HOME/.supacode/settings.json" 2>/dev/null || true"#
+      + #"cat "$cfg/kage/config.json" 2>/dev/null || cat "$cfg/supacode/config.json" 2>/dev/null "#
+      + #"|| cat "$HOME/.kage/settings.json" 2>/dev/null "#
+      + #"|| cat "$HOME/.supacode/settings.json" 2>/dev/null || true"#
     guard
       let output = try? await shell.run(URL(fileURLWithPath: "/bin/sh"), ["-c", script], nil)
     else {
