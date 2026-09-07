@@ -135,7 +135,13 @@ nonisolated struct GitStatusSnapshot: Equatable, Sendable {
   private func isIgnored(_ path: String) -> Bool {
     guard !ignoredPrefixes.isEmpty else { return false }
     if ignoredPrefixes.contains(path) { return true }
-    return ignoredPrefixes.contains { path.hasPrefix($0 + "/") }
+    // Probe only this path's ancestors, independent of the number of ignored
+    // roots in the repository. Slash boundaries keep similarly named siblings
+    // (e.g. build and build-backup) distinct.
+    for separator in path.indices where path[separator] == "/" {
+      if ignoredPrefixes.contains(String(path[..<separator])) { return true }
+    }
+    return false
   }
 }
 

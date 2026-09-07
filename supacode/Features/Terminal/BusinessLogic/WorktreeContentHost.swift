@@ -27,6 +27,10 @@ final class WorktreeContentHost {
   /// Routes a topology mutation into the worktree's `LayoutFeature`.
   @ObservationIgnored var sendLayoutAction: (LayoutFeature.Action) -> Void = { _ in }
   @ObservationIgnored var onNotificationReceived: ((UUID, String, String, Bool) -> Void)?
+  /// A content reported a new title. Nothing in TCA moved (the title lives on
+  /// the content's chrome), so this exists only to re-arm the persistence
+  /// debounce, which pulls the title back at snapshot time.
+  @ObservationIgnored var onReportedTitleChanged: (() -> Void)?
   @ObservationIgnored var onNotificationIndicatorChanged: (() -> Void)?
   @ObservationIgnored var onFocusChanged: ((UUID) -> Void)?
   @ObservationIgnored var onFocusedSurfaceColorChanged: (() -> Void)?
@@ -377,6 +381,14 @@ final class WorktreeContentHost {
     emitNotificationStateChanged()
   }
 
+  /// Drops unread entries, visible and pruned; read entries stay. Backs the
+  /// inspector's "Dismiss All" while the unread-only filter is active.
+  func dismissUnreadNotifications() {
+    notifications.removeAll { !$0.isRead }
+    clearAllUnseenCounters()
+    emitNotificationStateChanged()
+  }
+
   func enforceNotificationRetentionLimit() {
     guard trimNotificationsToRetentionLimit() else { return }
     emitNotificationStateChanged()
@@ -489,15 +501,22 @@ final class WorktreeContentHost {
   }
 
   private func isTabActivityBusy(_ tab: TabItem) -> Bool {
-    guard liveSurface(tab.content.id.rawValue) != nil else { return false }
-    guard !completedBlockingScriptTabs.contains(tab.id) else { return false }
-    if blockingScripts[tab.id] != nil { return true }
-    return hasRunningProgress(in: tab)
+    guard let surface = liveSurface(tab.content.id.rawValue) else { return false }
+    return Self.isTabActivityBusy(
+      isCompletedBlockingScript: completedBlockingScriptTabs.contains(tab.id),
+      progressState: surface.bridge.state.progressState
+    )
   }
 
-  private func hasRunningProgress(in tab: TabItem) -> Bool {
-    guard let surface = liveSurface(tab.content.id.rawValue) else { return false }
-    return Self.isRunningProgressState(surface.bridge.state.progressState)
+  /// A tracked blocking script's presence no longer forces busy (#828): only
+  /// genuine OSC-9 progress shimmers the row, and a completed-parked script's
+  /// lingering progress is suppressed.
+  static func isTabActivityBusy(
+    isCompletedBlockingScript: Bool,
+    progressState: ghostty_action_progress_report_state_e?
+  ) -> Bool {
+    guard !isCompletedBlockingScript else { return false }
+    return isRunningProgressState(progressState)
   }
 
   private static func isRunningProgressState(_ state: ghostty_action_progress_report_state_e?) -> Bool {
@@ -535,7 +554,28 @@ final class WorktreeContentHost {
   /// The tab's content-owned strip chrome, nil for non-terminal contents.
   private func terminalChrome(for tabID: TabID) -> TerminalTabChrome? {
     guard let contentID = tab(withID: tabID)?.content.id else { return nil }
-    return runtime.content(for: contentID)?.chrome as? TerminalTabChrome
+    return terminalChrome(for: contentID)
+  }
+
+  private func terminalChrome(for contentID: ContentID) -> TerminalTabChrome? {
+    runtime.content(for: contentID)?.chrome as? TerminalTabChrome
+  }
+
+  /// A live or dormant terminal reported a title. Agent TUIs rewrite it several
+  /// times a second, so it lands on the content's observable chrome (only that
+  /// one tab label re-renders) and never as a layout action. The lock is
+  /// resolved at display and snapshot time, so a script tab's title survives its
+  /// shell's reports.
+  func updateReportedTitle(for contentID: ContentID, title: String) {
+    // Shells clear the title mid-command and reset it at the next prompt; ignore
+    // the empty report so the tab label holds its last real title instead of
+    // flashing to the layout's creation-time name.
+    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, let chrome = terminalChrome(for: contentID),
+      chrome.reportedTitle != trimmed
+    else { return }
+    chrome.reportedTitle = trimmed
+    onReportedTitleChanged?()
   }
 
   func emitTaskStatusIfChanged() {
@@ -687,7 +727,7 @@ final class WorktreeContentHost {
     if tabID(containing: surfaceID) != nil,
       let title = liveSurface(surfaceID)?.bridge.state.title, !title.isEmpty
     {
-      sendLayoutAction(.runtime(.titleChanged(id: ContentID(rawValue: surfaceID), title: title)))
+      updateReportedTitle(for: ContentID(rawValue: surfaceID), title: title)
     }
     emitFocusChangedIfNeeded(surfaceID)
   }
@@ -1180,7 +1220,7 @@ final class WorktreeContentHost {
   private func updateDormantTabTitle(surfaceID: UUID, title: String) {
     let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, isDormantSurface(surfaceID) else { return }
-    sendLayoutAction(.runtime(.titleChanged(id: ContentID(rawValue: surfaceID), title: trimmed)))
+    updateReportedTitle(for: ContentID(rawValue: surfaceID), title: trimmed)
   }
 
   /// Full teardown on prune or quit: watchers stop, bookkeeping clears.

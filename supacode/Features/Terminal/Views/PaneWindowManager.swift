@@ -346,10 +346,7 @@ final class PaneWindowManager {
     guard let row = repositories.sidebarItems[id: worktreeID] else { return "" }
     let worktreeName = SidebarDisplayName.resolved(custom: row.customTitle, fallback: row.name) ?? row.name
     guard let repositoryID = repositories.repositoryID(containing: worktreeID) else { return worktreeName }
-    let repositoryName = Repository.sidebarDisplayName(
-      custom: repositories.sidebar.sections[repositoryID]?.title,
-      fallback: repositories.repositoryName(for: repositoryID) ?? "Repository"
-    )
+    let repositoryName = repositories.repositoryName(for: repositoryID) ?? "Repository"
     return "\(repositoryName) / \(worktreeName)"
   }
 
@@ -407,7 +404,7 @@ final class PaneWindowManager {
     window.minSize = NSSize(width: 320, height: 240)
     window.title =
       terminalManager.layoutState(for: worktreeID)?.layout.panes[id: paneID]
-      .flatMap(WindowedPaneRootView.title(for:)) ?? "Terminal"
+      .map { WindowedPaneRootView.title(for: $0, runtime: ContentRuntime.liveValue) } ?? "Terminal"
     window.center()
     cascadePoint = window.cascadeTopLeft(from: cascadePoint)
     let headerModel = PaneWindowHeaderModel()
@@ -576,9 +573,9 @@ private struct WindowedPaneRootView: View {
           )
         }
         .onAppear {
-          updateWindowTitle(Self.title(for: pane))
+          updateWindowTitle(Self.title(for: pane, runtime: runtime))
         }
-        .onChange(of: Self.title(for: pane)) { _, title in
+        .onChange(of: Self.title(for: pane, runtime: runtime)) { _, title in
           updateWindowTitle(title)
         }
         .focusedSceneAction(
@@ -653,13 +650,6 @@ private struct WindowedPaneRootView: View {
         ) {
           performOnSelectedSurface(of: pane) { $0.navigateSearch(.previous) }
         }
-        .focusedSceneAction(
-          \.endSearchAction,
-          enabled: pane.selectedTab != nil,
-          token: pane.selectedTab?.content.id
-        ) {
-          performOnSelectedSurface(of: pane) { $0.performBindingAction("end_search") }
-        }
       } else {
         // The reconcile closes this window on the same layout change.
         Color.clear
@@ -697,9 +687,9 @@ private struct WindowedPaneRootView: View {
     action(surface)
   }
 
-  static func title(for pane: Pane) -> String {
+  static func title(for pane: Pane, runtime: ContentRuntime) -> String {
     guard let tab = pane.selectedTab else { return "Terminal" }
-    return tab.customTitle ?? tab.title
+    return TabTitle.resolved(for: tab, runtime: runtime)
   }
 }
 

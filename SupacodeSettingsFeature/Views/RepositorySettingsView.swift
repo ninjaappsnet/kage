@@ -51,7 +51,7 @@ public struct RepositorySettingsView: View {
           Text("Copy ignored files to new worktrees")
           Text("Copies gitignored files from the main worktree.")
         }
-        .disabled(store.isBareRepository)
+        .disabled(store.isBareRepository || store.host != nil)
         Picker(selection: settings.copyUntrackedOnWorktreeCreate) {
           Text("Global \(Text(store.globalCopyUntrackedOnWorktreeCreate ? "Yes" : "No").foregroundStyle(.secondary))")
             .tag(Bool?.none)
@@ -61,9 +61,13 @@ public struct RepositorySettingsView: View {
           Text("Copy untracked files to new worktrees")
           Text("Copies untracked files from the main worktree.")
         }
-        .disabled(store.isBareRepository)
+        .disabled(store.isBareRepository || store.host != nil)
         if store.isBareRepository {
           Text("Copy flags are ignored for bare repositories.")
+            .appFont(.footnote)
+            .foregroundStyle(.tertiary)
+        } else if store.host != nil {
+          Text("Copying is available for local repositories only.")
             .appFont(.footnote)
             .foregroundStyle(.tertiary)
         }
@@ -84,6 +88,17 @@ public struct RepositorySettingsView: View {
         Text("Worktree")
       } footer: {
         Text("e.g., `\(exampleWorktreePath)`")
+      }
+      Section("Git Forge") {
+        Picker(selection: settings.forgeID) {
+          Text("Automatic").tag(String?.none)
+          Text("GitHub").tag(String?.some("github"))
+          Text("GitLab").tag(String?.some("gitlab"))
+          Text("None").tag(String?.some("none"))
+        } label: {
+          Text("Forge")
+          Text("Forge used for pull request data and actions.")
+        }
       }
       Section {
         Picker(selection: settings.pullRequestMergeStrategy) {

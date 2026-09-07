@@ -111,6 +111,7 @@ struct FileViewerHibernationTests {
 
     await harness.store.send(.selectedWorktreeChanged(harness.worktreeID)) {
       $0.selectedWorktreeID = harness.worktreeID
+      $0.recentWorktreeIDs = [harness.worktreeID]
     }
     await harness.clock.advance(by: TerminalsFeature.hibernationGraceWindow)
 
@@ -126,6 +127,7 @@ struct FileViewerHibernationTests {
 
     await harness.store.send(.selectedWorktreeChanged(harness.worktreeID)) {
       $0.selectedWorktreeID = harness.worktreeID
+      $0.recentWorktreeIDs = [harness.worktreeID]
     }
     await harness.clock.advance(by: TerminalsFeature.hibernationGraceWindow * 3)
 

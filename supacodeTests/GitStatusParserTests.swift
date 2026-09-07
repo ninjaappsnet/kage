@@ -273,6 +273,29 @@ struct GitStatusParserTests {
     #expect(snapshot.decoration(for: "node_modules_backup", isDirectory: true, isExpanded: false) == nil)
   }
 
+  @Test(arguments: ["build output", "缓存/编译", "cafe\u{301}/📦"])
+  func ignoredAncestorsRespectPathBoundaries(root: String) {
+    let snapshot = GitStatusSnapshot(ignoredPrefixes: [root])
+    for path in [root, root + "/nested/file.txt"] {
+      #expect(snapshot.decoration(for: path, isDirectory: false, isExpanded: false) == .ignored)
+      #expect(snapshot.decoration(for: path, isDirectory: true, isExpanded: true) == .ignored)
+    }
+    for path in [root + "-backup/nested/file.txt", "parent/" + root + "/file.txt"] {
+      #expect(snapshot.decoration(for: path, isDirectory: false, isExpanded: false) == nil)
+    }
+  }
+
+  @Test func trackedChangeTakesPrecedenceOverIgnoredAncestor() {
+    let path = "build/tracked.txt"
+    let snapshot = GitStatusSnapshot(
+      statuses: [path: GitFileStatus(index: .modified)], ignoredPrefixes: ["build"]
+    )
+    #expect(
+      snapshot.decoration(for: path, isDirectory: false, isExpanded: false)
+        == .file(state: .modified, isStaged: true)
+    )
+  }
+
   // MARK: - Discard classification
 
   private static func discardKind(_ records: [String]) -> GitDiscardKind? {

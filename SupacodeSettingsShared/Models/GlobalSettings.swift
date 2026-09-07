@@ -57,6 +57,14 @@ public nonisolated enum NotificationRetentionLimit: Int, Codable, CaseIterable, 
   }
 }
 
+/// Which worktrees the notification inspector lists. Persisted across sessions.
+public nonisolated enum NotificationScope: String, Codable, CaseIterable, Sendable {
+  case all
+  case currentWorktree
+
+  public static let defaultValue: NotificationScope = .all
+}
+
 /// How Supacode combines the user's own Ghostty config with the optional
 /// Supacode-specific config at `~/.supacode/ghostty.config`.
 public nonisolated enum GhosttyUserConfigMode: String, Codable, CaseIterable, Sendable {
@@ -111,9 +119,17 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   public var muteNotificationsForActiveSurface: Bool
   public var moveNotifiedWorktreeToTop: Bool
   public var notificationRetentionLimit: NotificationRetentionLimit
+  public var notificationScope: NotificationScope
+  /// Whether the notification inspector groups its list into worktree sections.
+  public var notificationsGroupedByWorktree: Bool
+  /// Whether the notification inspector hides read notifications.
+  public var notificationsUnreadOnly: Bool
   public var analyticsEnabled: Bool
   public var crashReportsEnabled: Bool
   public var githubIntegrationEnabled: Bool
+  /// Per-forge integration enablement keyed by forge id. GitHub stays on the
+  /// legacy flag above so downgraded builds keep their setting.
+  public var forgeEnabledByID: [String: Bool]
   public var deleteBranchOnDeleteWorktree: Bool
   public var mergedWorktreeAction: MergedWorktreeAction
   public var promptForWorktreeCreation: Bool
@@ -164,6 +180,8 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   public var automaticRepositoryRefreshEnabled: Bool
   /// Whether hovering a split pane focuses it (focus follows mouse). Off by default.
   public var hoverFocusMode: HoverFocusMode
+  /// System-wide chord that toggles the app; nil (the default) leaves it unbound.
+  public var globalToggleVisibilityHotkey: AppShortcutOverride?
 
   public static let `default` = GlobalSettings(
     appearanceMode: .dark,
@@ -177,9 +195,13 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     muteNotificationsForActiveSurface: true,
     moveNotifiedWorktreeToTop: false,
     notificationRetentionLimit: .defaultValue,
+    notificationScope: .defaultValue,
+    notificationsGroupedByWorktree: false,
+    notificationsUnreadOnly: false,
     analyticsEnabled: true,
     crashReportsEnabled: true,
     githubIntegrationEnabled: true,
+    forgeEnabledByID: [:],
     deleteBranchOnDeleteWorktree: true,
     mergedWorktreeAction: .ignore,
     promptForWorktreeCreation: true,
@@ -218,9 +240,13 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     muteNotificationsForActiveSurface: Bool = true,
     moveNotifiedWorktreeToTop: Bool,
     notificationRetentionLimit: NotificationRetentionLimit = .defaultValue,
+    notificationScope: NotificationScope = .defaultValue,
+    notificationsGroupedByWorktree: Bool = false,
+    notificationsUnreadOnly: Bool = false,
     analyticsEnabled: Bool,
     crashReportsEnabled: Bool,
     githubIntegrationEnabled: Bool,
+    forgeEnabledByID: [String: Bool] = [:],
     deleteBranchOnDeleteWorktree: Bool,
     mergedWorktreeAction: MergedWorktreeAction = .ignore,
     promptForWorktreeCreation: Bool,
@@ -247,7 +273,8 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     terminalHibernationEnabled: Bool = true,
     chromeTextSize: ChromeTextSize = .default,
     automaticRepositoryRefreshEnabled: Bool = true,
-    hoverFocusMode: HoverFocusMode = .never
+    hoverFocusMode: HoverFocusMode = .never,
+    globalToggleVisibilityHotkey: AppShortcutOverride? = nil
   ) {
     self.appearanceMode = appearanceMode
     self.defaultEditorID = defaultEditorID
@@ -260,9 +287,13 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     self.muteNotificationsForActiveSurface = muteNotificationsForActiveSurface
     self.moveNotifiedWorktreeToTop = moveNotifiedWorktreeToTop
     self.notificationRetentionLimit = notificationRetentionLimit
+    self.notificationScope = notificationScope
+    self.notificationsGroupedByWorktree = notificationsGroupedByWorktree
+    self.notificationsUnreadOnly = notificationsUnreadOnly
     self.analyticsEnabled = analyticsEnabled
     self.crashReportsEnabled = crashReportsEnabled
     self.githubIntegrationEnabled = githubIntegrationEnabled
+    self.forgeEnabledByID = forgeEnabledByID
     self.deleteBranchOnDeleteWorktree = deleteBranchOnDeleteWorktree
     self.mergedWorktreeAction = mergedWorktreeAction
     self.promptForWorktreeCreation = promptForWorktreeCreation
@@ -290,6 +321,7 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     self.chromeTextSize = chromeTextSize
     self.automaticRepositoryRefreshEnabled = automaticRepositoryRefreshEnabled
     self.hoverFocusMode = hoverFocusMode
+    self.globalToggleVisibilityHotkey = globalToggleVisibilityHotkey
   }
 
   /// Keys for reading renamed settings fields that no longer
@@ -343,6 +375,17 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
       (try container.decodeIfPresent(Int.self, forKey: .notificationRetentionLimit))
       .flatMap(NotificationRetentionLimit.init(rawValue:))
       ?? Self.default.notificationRetentionLimit
+    // Fall back instead of throwing, which would reset the whole file.
+    notificationScope =
+      ((try? container.decodeIfPresent(String.self, forKey: .notificationScope)) ?? nil)
+      .flatMap(NotificationScope.init(rawValue:))
+      ?? Self.default.notificationScope
+    notificationsGroupedByWorktree =
+      try container.decodeIfPresent(Bool.self, forKey: .notificationsGroupedByWorktree)
+      ?? Self.default.notificationsGroupedByWorktree
+    notificationsUnreadOnly =
+      try container.decodeIfPresent(Bool.self, forKey: .notificationsUnreadOnly)
+      ?? Self.default.notificationsUnreadOnly
     analyticsEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .analyticsEnabled)
       ?? Self.default.analyticsEnabled
@@ -352,6 +395,18 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     githubIntegrationEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .githubIntegrationEnabled)
       ?? Self.default.githubIntegrationEnabled
+    let decodedForgeEnabledByID =
+      (try? container.decodeIfPresent([String: Bool].self, forKey: .forgeEnabledByID))
+      .flatMap { $0 }
+    if let decodedForgeEnabledByID {
+      forgeEnabledByID = decodedForgeEnabledByID
+    } else if !githubIntegrationEnabled {
+      // A pre-forge file with the legacy integration off opted out of forge
+      // polling entirely; new forges must not resurrect it on upgrade.
+      forgeEnabledByID = ["gitlab": false]
+    } else {
+      forgeEnabledByID = Self.default.forgeEnabledByID
+    }
     deleteBranchOnDeleteWorktree =
       try container.decodeIfPresent(Bool.self, forKey: .deleteBranchOnDeleteWorktree)
       ?? Self.default.deleteBranchOnDeleteWorktree
@@ -494,5 +549,27 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
       ((try? container.decodeIfPresent(String.self, forKey: .hoverFocusMode)) ?? nil)
       .flatMap(HoverFocusMode.init(rawValue:))
       ?? Self.default.hoverFocusMode
+    // A malformed value falls back to unbound instead of throwing, which would
+    // reset the whole file to defaults.
+    globalToggleVisibilityHotkey =
+      ((try? container.decodeIfPresent(AppShortcutOverride.self, forKey: .globalToggleVisibilityHotkey)) ?? nil)
+      ?? Self.default.globalToggleVisibilityHotkey
+  }
+}
+
+extension GlobalSettings {
+  /// Effective enablement for one forge integration. GitHub reads the legacy
+  /// stored flag so downgraded builds keep their setting.
+  public func forgeIntegrationEnabled(forID id: String) -> Bool {
+    guard id != "github" else { return githubIntegrationEnabled }
+    return forgeEnabledByID[id] ?? true
+  }
+
+  public mutating func setForgeIntegrationEnabled(_ enabled: Bool, forID id: String) {
+    guard id != "github" else {
+      githubIntegrationEnabled = enabled
+      return
+    }
+    forgeEnabledByID[id] = enabled
   }
 }

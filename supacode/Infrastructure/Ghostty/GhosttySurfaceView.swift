@@ -146,6 +146,20 @@ final class GhosttySurfaceView: NSView, Identifiable {
       }
     }
   }
+  // Strong hold forms a surface<->wrapper cycle, so `closeSurface` must release
+  // it; `deinit` cannot free the surface until it has.
+  private var ownedScrollWrapper: GhosttySurfaceScrollView?
+
+  /// The view a content host mounts for this surface: its scroll wrapper, built
+  /// once and reused across remounts so a rebuild or worktree switch reparents
+  /// it and the live surface keeps its painted frames, instead of rebuilding at
+  /// zero size.
+  func hostedView() -> GhosttySurfaceScrollView {
+    if let ownedScrollWrapper { return ownedScrollWrapper }
+    let wrapper = GhosttySurfaceScrollView(surfaceView: self)
+    ownedScrollWrapper = wrapper
+    return wrapper
+  }
   var onFocusChange: ((Bool) -> Void)?
   /// Asks the owning state to re-derive activity because user input reached an
   /// occluded surface, passing the window's fresh key/visibility readings so
@@ -292,6 +306,11 @@ final class GhosttySurfaceView: NSView, Identifiable {
     MainActor.assumeIsolated {
       SecureInput.shared.removeScoped(id)
     }
+    // A live surface here means a teardown path bypassed `closeSurface`; the
+    // call below still frees it, off the turn.
+    if surface != nil {
+      assertionFailure("GhosttySurfaceView deallocated with a live surface; a teardown path bypassed closeSurface().")
+    }
     closeSurface()
     if let workingDirectoryCString {
       free(workingDirectoryCString)
@@ -311,16 +330,36 @@ final class GhosttySurfaceView: NSView, Identifiable {
 
   func closeSurface() {
     clearNotificationObservers()
-    if let surface {
-      if let surfaceRef {
-        runtime.unregisterSurface(surfaceRef)
-        self.surfaceRef = nil
-      }
+    // Break the surface<->wrapper cycle; the strong hold otherwise blocks deinit.
+    defer { ownedScrollWrapper = nil }
+    guard let surface else { return }
+    if let surfaceRef {
+      runtime.unregisterSurface(surfaceRef)
+      self.surfaceRef = nil
+    }
+    self.surface = nil
+    bridge.surface = nil
+    lastOcclusion = nil
+    lastSurfaceFocus = nil
+    // Hide before the free so the "[Process exited]" overlay can't paint while
+    // the layout collapses around the closing pane.
+    isHidden = true
+    // Free off the current turn on the main queue: `ghostty_surface_free` joins
+    // the surface's search, renderer, and IO threads and tears down the Metal
+    // renderer, which would otherwise block the reducer turn. The main queue,
+    // not a `Task`, runs the free outside the reducer's inherited task-local
+    // scope, where an isolated-deinit release it triggers can abort as an
+    // invalid free. Retain the runtime and bridge by hand across the free (a
+    // Sendable block can't capture them) so the Ghostty app stays alive and a
+    // synchronous callback during the free still resolves a live bridge; `self`
+    // is intentionally not captured, as the free never touches the surface's
+    // nsview.
+    let retainedRuntime = Unmanaged.passRetained(runtime)
+    let retainedBridge = Unmanaged.passRetained(bridge)
+    DispatchQueue.main.async {
       ghostty_surface_free(surface)
-      self.surface = nil
-      bridge.surface = nil
-      lastOcclusion = nil
-      lastSurfaceFocus = nil
+      retainedBridge.release()
+      retainedRuntime.release()
     }
   }
 
@@ -543,7 +582,7 @@ final class GhosttySurfaceView: NSView, Identifiable {
     guard surface != nil else { return }
     guard self.focused != focused else { return }
     self.focused = focused
-    if focused {
+    if focused, bridge.state.bellCount != 0 {
       bridge.state.bellCount = 0
     }
     setSurfaceFocus(focused)
@@ -691,7 +730,11 @@ final class GhosttySurfaceView: NSView, Identifiable {
       interpretKeyEvents([event])
       return
     }
-    bridge.state.bellCount = 0
+    // Guarded: an unconditional write invalidates every observer of the bridge
+    // state on every keystroke, key repeat included.
+    if bridge.state.bellCount != 0 {
+      bridge.state.bellCount = 0
+    }
     let (translationEvent, translationMods) = translationState(event, surface: surface)
     let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
     keyTextAccumulator = []

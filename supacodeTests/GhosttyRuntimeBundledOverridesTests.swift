@@ -41,6 +41,23 @@ struct GhosttyRuntimeBundledOverridesTests {
     #expect(light.windowTintColor().isLightColor)
   }
 
+  // Surface liveness is tracked by Set membership alone now that `isValid` is
+  // gone: distinct references over the same pointer stay distinct, and removing
+  // one drops exactly that reference. Uses a bogus pointer never dereferenced by
+  // the identity `==`/`hash` or `Set.remove`.
+  @Test func surfaceReferenceSetRemovesExactlyTheUnregisteredReference() {
+    let pointer = UnsafeMutableRawPointer(bitPattern: 0x1)!
+    let first = GhosttyRuntime.SurfaceReference(pointer)
+    let second = GhosttyRuntime.SurfaceReference(pointer)
+    var surfaces: Set<GhosttyRuntime.SurfaceReference> = [first, second]
+    #expect(surfaces.count == 2)
+    #expect(first != second)
+
+    surfaces.remove(first)
+    #expect(!surfaces.contains(first))
+    #expect(surfaces.contains(second))
+  }
+
   /// Shell integration must NOT be disabled in the bundled overrides: surfaces
   /// run the real shell with zmx injected as a `command-wrapper`, so Ghostty
   /// integrates the shell exactly as without zmx. Forcing `none` here would
@@ -61,6 +78,19 @@ struct GhosttyRuntimeBundledOverridesTests {
     // native Ghostty path is unbound in the final tier and cannot resurrect it.
     #expect(GhosttyRuntime.appOwnedOverridesString.contains("focus-follows-mouse = false"))
     #expect(!GhosttyRuntime.bundledOverridesString.contains("focus-follows-mouse"))
+  }
+
+  @Test func appOwnedOverridesUnbindGhosttySearchChords() {
+    // Search is app-owned (the Find menu), so Ghostty's default search chords are
+    // released unconditionally here, not just via customizable `AppShortcuts`, so
+    // disabling or rebinding a Find shortcut can't leave Ghostty driving search.
+    // Escape stays bound so it still cancels a search and reaches TUIs.
+    let overrides = GhosttyRuntime.appOwnedOverridesString
+    #expect(overrides.contains("keybind = super+f=unbind"))
+    #expect(overrides.contains("keybind = super+e=unbind"))
+    #expect(overrides.contains("keybind = super+g=unbind"))
+    #expect(overrides.contains("keybind = super+shift+g=unbind"))
+    #expect(overrides.contains("keybind = super+shift+f=unbind"))
   }
 
   @Test func configResolutionMergeLoadsBothTiers() {

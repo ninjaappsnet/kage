@@ -8,31 +8,38 @@ import UniformTypeIdentifiers
 final class GhosttyRuntime {
   private static let logger = SupaLogger("Ghostty")
 
-  /// Live-pointer registries for C callbacks. A queued main-queue callback
-  /// (e.g. a wakeup) can fire after its runtime deinit freed the app, so
-  /// dereferencing the raw userdata/app pointer would be use-after-free;
-  /// every resolution validates membership first. Registered in init,
-  /// removed in deinit.
+  /// Live-pointer registries for C callbacks. A queued main-queue callback can
+  /// fire after the raw pointer it names was freed, so dereferencing it would be
+  /// use-after-free; the deferred handler validates membership first. App and
+  /// userdata are registered in init and removed in deinit; surfaces are
+  /// registered on `registerSurface` and removed on `unregisterSurface`, which
+  /// `closeSurface` calls synchronously before the deferred
+  /// `ghostty_surface_free`, so a background-thread action queued around the
+  /// close is dropped instead of hitting freed memory.
   private static var liveUserdataBits: Set<UInt> = []
   private static var liveAppBits: Set<UInt> = []
+  private static var liveSurfaceBits: Set<UInt> = []
 
-  final class SurfaceReference {
+  final class SurfaceReference: Hashable {
     let surface: ghostty_surface_t
-    var isValid = true
 
     init(_ surface: ghostty_surface_t) {
       self.surface = surface
     }
 
-    func invalidate() {
-      isValid = false
+    static func == (lhs: SurfaceReference, rhs: SurfaceReference) -> Bool {
+      lhs === rhs
+    }
+
+    func hash(into hasher: inout Hasher) {
+      hasher.combine(ObjectIdentifier(self))
     }
   }
 
   private var config: ghostty_config_t?
   private(set) var app: ghostty_app_t?
   private var observers: [NSObjectProtocol] = []
-  private var surfaceRefs: [SurfaceReference] = []
+  private var surfaceRefs: Set<SurfaceReference> = []
   private var lastColorScheme: ghostty_color_scheme_e?
   /// Whether the user has toggled background opacity to force
   /// an opaque window, overriding the configured transparency.
@@ -181,8 +188,8 @@ final class GhosttyRuntime {
 
   func registerSurface(_ surface: ghostty_surface_t) -> SurfaceReference {
     let ref = SurfaceReference(surface)
-    surfaceRefs.append(ref)
-    surfaceRefs = surfaceRefs.filter { $0.isValid }
+    surfaceRefs.insert(ref)
+    Self.liveSurfaceBits.insert(UInt(bitPattern: surface))
     if let lastColorScheme {
       ghostty_surface_set_color_scheme(surface, lastColorScheme)
     }
@@ -190,8 +197,8 @@ final class GhosttyRuntime {
   }
 
   func unregisterSurface(_ ref: SurfaceReference) {
-    ref.invalidate()
-    surfaceRefs = surfaceRefs.filter { $0.isValid }
+    surfaceRefs.remove(ref)
+    Self.liveSurfaceBits.remove(UInt(bitPattern: ref.surface))
   }
 
   /// Reloads the full app config from disk and re-applies the current color scheme.
@@ -263,7 +270,7 @@ final class GhosttyRuntime {
   }
 
   private func applyColorSchemeToSurfaces(_ scheme: ghostty_color_scheme_e) {
-    for ref in surfaceRefs where ref.isValid {
+    for ref in surfaceRefs {
       ghostty_surface_set_color_scheme(ref.surface, scheme)
     }
   }
@@ -315,12 +322,25 @@ final class GhosttyRuntime {
     guard let app else { return false }
     let appBits = UInt(bitPattern: app)
     if Thread.isMainThread {
+      // Synchronous: the caller is driving this surface right now (e.g. its
+      // creation, which emits the initial cell-size/title before the surface is
+      // registered), so it is live by construction.
       return MainActor.assumeIsolated {
         handleAction(appBits: appBits, target: target, action: action)
       }
     }
+    // A background surface thread can emit an action just before, or during, the
+    // surface's deferred free; capture its identity so the main-actor block can
+    // drop it if the surface was unregistered (closing/freed) in the meantime,
+    // rather than dereferencing a pointer that is about to be, or already is,
+    // freed.
+    let surfaceBits =
+      target.tag == GHOSTTY_TARGET_SURFACE
+      ? target.target.surface.map { UInt(bitPattern: $0) }
+      : nil
     DispatchQueue.main.async {
       MainActor.assumeIsolated {
+        if let surfaceBits, !liveSurfaceBits.contains(surfaceBits) { return }
         _ = handleAction(appBits: appBits, target: target, action: action)
       }
     }
@@ -653,10 +673,19 @@ final class GhosttyRuntime {
   /// load last. Keeping Ghostty's close predicate enabled lets
   /// `confirmCloseSurface` decide whether Supacode prompts. Forcing
   /// `focus-follows-mouse` off hands hover-focus to Supacode's `hoverFocusMode`,
-  /// so the layout is the single authority and `.never` truly disables it.
+  /// so the layout is the single authority and `.never` truly disables it. Search
+  /// is owned app-side (the Find menu), so Ghostty's default search chords are
+  /// unbound unconditionally here, not just via the customizable `AppShortcuts`,
+  /// so disabling or rebinding a Find shortcut can't leave Ghostty driving it.
+  /// Escape is left bound so it still cancels a search and reaches full-screen TUIs.
   internal static let appOwnedOverridesString = """
     confirm-close-surface = true
     focus-follows-mouse = false
+    keybind = super+f=unbind
+    keybind = super+e=unbind
+    keybind = super+g=unbind
+    keybind = super+shift+g=unbind
+    keybind = super+shift+f=unbind
     """
 
   /// Reports Supacode in `TERM_PROGRAM` so programs detect the real host

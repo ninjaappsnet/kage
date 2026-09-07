@@ -2,6 +2,7 @@ import AppKit
 import Dependencies
 import DependenciesTestSupport
 import Foundation
+import GhosttyKit
 import IdentifiedCollections
 import Sharing
 import SupacodeSettingsShared
@@ -113,6 +114,25 @@ struct WorktreeContentHostTests {
     #expect(host.hasUnseenNotification)
   }
 
+  /// #828: a tracked blocking script alone must not shimmer the worktree row.
+  /// Only genuine OSC-9 progress does, and a completed-parked script's lingering
+  /// progress stays off the row.
+  @Test func rowActivityBusyReflectsProgressNotScriptPresence() {
+    #expect(!WorktreeContentHost.isTabActivityBusy(isCompletedBlockingScript: false, progressState: nil))
+    #expect(
+      WorktreeContentHost.isTabActivityBusy(
+        isCompletedBlockingScript: false, progressState: GHOSTTY_PROGRESS_STATE_SET
+      ))
+    #expect(
+      WorktreeContentHost.isTabActivityBusy(
+        isCompletedBlockingScript: false, progressState: GHOSTTY_PROGRESS_STATE_INDETERMINATE
+      ))
+    #expect(
+      !WorktreeContentHost.isTabActivityBusy(
+        isCompletedBlockingScript: true, progressState: GHOSTTY_PROGRESS_STATE_SET
+      ))
+  }
+
   @Test(.dependencies) func blockingScriptCompletionLocksTheTabChrome() {
     let surfaceID = UUID()
     let tabID = TabID(rawValue: surfaceID)
@@ -130,6 +150,48 @@ struct WorktreeContentHostTests {
     // Re-running the script unlocks the parked shell's replacement.
     host.trackBlockingScript(kind: .archive, tabID: tabID, launchDirectory: nil)
     #expect(content.terminalChrome.isReadOnly == false)
+  }
+
+  @Test func aReportedTitleLandsOnTheChromeAndRearmsPersistenceOnce() {
+    let surfaceID = UUID()
+    let contentID = ContentID(rawValue: surfaceID)
+    let runtime = ContentRuntime()
+    let content = ChromeTabContent(id: contentID)
+    #expect(runtime.provision(content, at: .fallback))
+    let host = makeHost(layout: singleTabLayout(contentID: surfaceID), runtime: runtime)
+    var sentLayoutActions = 0
+    var persistenceRearms = 0
+    host.sendLayoutAction = { _ in sentLayoutActions += 1 }
+    host.onReportedTitleChanged = { persistenceRearms += 1 }
+
+    host.updateReportedTitle(for: contentID, title: "claude")
+    // An unchanged report is dropped before it can touch the chrome.
+    host.updateReportedTitle(for: contentID, title: "claude")
+
+    #expect(content.terminalChrome.reportedTitle == "claude")
+    #expect(persistenceRearms == 1)
+    // The whole point: a title storm never reaches the store.
+    #expect(sentLayoutActions == 0)
+  }
+
+  @Test(.dependencies) func anEmptyReportedTitleIsIgnoredSoTheLabelHoldsItsLastValue() {
+    let surfaceID = UUID()
+    let contentID = ContentID(rawValue: surfaceID)
+    let runtime = ContentRuntime()
+    let content = ChromeTabContent(id: contentID)
+    #expect(runtime.provision(content, at: .fallback))
+    let host = makeHost(layout: singleTabLayout(contentID: surfaceID), runtime: runtime)
+    var persistenceRearms = 0
+    host.onReportedTitleChanged = { persistenceRearms += 1 }
+
+    host.updateReportedTitle(for: contentID, title: "~/project")
+    // A shell that clears the title mid-command must not flash the label: the
+    // empty and whitespace reports are dropped, keeping the last real title.
+    host.updateReportedTitle(for: contentID, title: "")
+    host.updateReportedTitle(for: contentID, title: "   ")
+
+    #expect(content.terminalChrome.reportedTitle == "~/project")
+    #expect(persistenceRearms == 1)
   }
 }
 

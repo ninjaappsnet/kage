@@ -106,6 +106,11 @@ final class FileViewerTabChrome: TabChrome {
 
   /// Terminal-input state; a viewer has no pty to refuse input.
   var isReadOnly: Bool { false }
+
+  /// Nothing reports a title for a viewer: the layout's own title is the file
+  /// name, which is already the whole truth. Reporting the name back would make
+  /// every buffer change a title report for no gain.
+  var reportedTitle: String? { nil }
 }
 
 /// Matches the unsaved dot in the viewer's own header, so the tab and the pane
