@@ -21,7 +21,7 @@ nonisolated enum ForgeDispatch {
       await send(
         .presentAlert(
           title: "No git forge configured",
-          message: "Supacode could not resolve a git forge for this repository. "
+          message: "Kage could not resolve a git forge for this repository. "
             + "Check the repository's forge setting and that the forge is enabled in Git Forges settings."
         )
       )
@@ -61,7 +61,7 @@ nonisolated enum ForgeDispatch {
       await send(
         .presentAlert(
           title: "Branch name unavailable",
-          message: "Supacode could not determine the pull request branch."
+          message: "Kage could not determine the pull request branch."
         )
       )
       return nil
@@ -72,7 +72,7 @@ nonisolated enum ForgeDispatch {
       await send(
         .presentAlert(
           title: "No workflow runs found",
-          message: "Supacode could not find any workflow runs for this branch."
+          message: "Kage could not find any workflow runs for this branch."
         )
       )
       return nil

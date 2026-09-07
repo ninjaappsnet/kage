@@ -181,7 +181,7 @@ private struct GlobalHotkeySettingRow: View {
           Button("Record") {
             isRecording = true
           }
-          .help("Record a system-wide hotkey to toggle Supacode.")
+          .help("Record a system-wide hotkey to toggle Kage.")
         }
       }
       .popover(isPresented: $isRecording) {
@@ -204,7 +204,7 @@ private struct GlobalHotkeySettingRow: View {
         Text("That hotkey is unavailable. Another app may already use it.")
           .foregroundStyle(.red)
       } else {
-        Text("Toggle Supacode from anywhere.")
+        Text("Toggle Kage from anywhere.")
       }
     }
   }

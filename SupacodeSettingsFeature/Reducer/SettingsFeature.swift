@@ -789,7 +789,7 @@ public struct SettingsFeature {
           ButtonState(role: .cancel, action: .dismiss) { TextState("OK") }
         } message: {
           TextState(
-            "Supacode couldn't record the folder in agents.json, so the integration "
+            "Kage couldn't record the folder in agents.json, so the integration "
               + "wasn't installed. \(reason)")
         }
         return .none

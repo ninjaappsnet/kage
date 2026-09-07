@@ -105,7 +105,7 @@ nonisolated enum PiSettingsInstallerError: Error, Equatable, LocalizedError {
   var errorDescription: String? {
     switch self {
     case .extensionNotManaged(let path):
-      "The Pi extension at \(path) is not managed by Supacode."
+      "The Pi extension at \(path) is not managed by Kage."
     }
   }
 }

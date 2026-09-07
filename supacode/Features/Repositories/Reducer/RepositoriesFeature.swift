@@ -2329,7 +2329,7 @@ struct RepositoriesFeature {
             // Only claim a copy when one will actually happen (a resolved plan,
             // not a resolution failure).
             if supaignoreActive, supaignorePlanFailure == nil {
-              commandText += "\n# supaignore filter active: Supacode copies the surviving files"
+              commandText += "\n# supaignore filter active: Kage copies the surviving files"
             }
             progress.commandText = commandText
             await send(
@@ -3015,7 +3015,7 @@ struct RepositoriesFeature {
                   branchName: branchName,
                   copy: ForgeDispatch.FailingRunCopy(
                     inProgressToast: "Fetching CI logs…",
-                    noFailingRunMessage: "Supacode could not find a failing workflow run to copy logs from."
+                    noFailingRunMessage: "Kage could not find a failing workflow run to copy logs from."
                   ),
                   send: send
                 )
@@ -3073,7 +3073,7 @@ struct RepositoriesFeature {
                   branchName: branchName,
                   copy: ForgeDispatch.FailingRunCopy(
                     inProgressToast: "Re-running failed jobs…",
-                    noFailingRunMessage: "Supacode could not find a failing workflow run to re-run."
+                    noFailingRunMessage: "Kage could not find a failing workflow run to re-run."
                   ),
                   send: send
                 )
