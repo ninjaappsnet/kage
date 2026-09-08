@@ -94,11 +94,19 @@ struct WorkspaceSwitcherView: View {
           .foregroundStyle(.secondary)
           .accessibilityHidden(true)
       }
+      // The menu is backed by an NSPopUpButton, which takes its *ideal* label
+      // width — `Spacer` and `maxWidth: .infinity` both leave that at the text's
+      // own width, so the click target rendered as a ~100pt island centered in
+      // the sidebar. Give the label a real width instead: the container's, less
+      // the 16pt the padding below adds back.
+      .containerRelativeFrame(.horizontal) { width, _ in width - 16 }
       .contentShape(.rect)
     }
     .menuStyle(.borderlessButton)
     .menuIndicator(.hidden)
-    .padding(.horizontal, 10)
+    // Matches the 8pt inset `.listStyle(.sidebar)` gives its rows, so the
+    // switcher's edges line up with the rows beneath it.
+    .padding(.horizontal, 8)
     .padding(.vertical, 6)
     // The switcher is a `.safeAreaInset` over the List (see `SidebarView`), so
     // rows scroll beneath it: paint the sidebar's own `.sidebar` material so it
