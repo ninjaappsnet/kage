@@ -94,16 +94,16 @@ struct WorkspaceSwitcherView: View {
           .foregroundStyle(.secondary)
           .accessibilityHidden(true)
       }
-      // The menu is backed by an NSPopUpButton, which takes its *ideal* label
-      // width — `Spacer` and `maxWidth: .infinity` both leave that at the text's
-      // own width, so the click target rendered as a ~100pt island centered in
-      // the sidebar. Give the label a real width instead: the container's, less
-      // the 16pt the padding below adds back.
-      .containerRelativeFrame(.horizontal) { width, _ in width - 16 }
       .contentShape(.rect)
     }
     .menuStyle(.borderlessButton)
     .menuIndicator(.hidden)
+    // The width has to go on the menu, not its label: AppKit renders the label
+    // and drops its SwiftUI layout, so `Spacer`, `maxWidth: .infinity` and
+    // `containerRelativeFrame` applied in there were all measured as no-ops and
+    // the click target stayed a content-sized island centered in the sidebar.
+    // A definite width on the menu itself does size the underlying button.
+    .containerRelativeFrame(.horizontal) { width, _ in width - 16 }
     // Matches the 8pt inset `.listStyle(.sidebar)` gives its rows, so the
     // switcher's edges line up with the rows beneath it.
     .padding(.horizontal, 8)
