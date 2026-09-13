@@ -78,6 +78,11 @@ struct ContentView: View {
       WorktreeCreationPromptView(store: promptStore)
     }
     .sheet(
+      item: $repositoriesStore.scope(state: \.nestedFolderPrompt, action: \.nestedFolderPrompt)
+    ) { promptStore in
+      NestedFolderPromptView(store: promptStore)
+    }
+    .sheet(
       item: $repositoriesStore.scope(
         state: \.repositoryCustomization,
         action: \.repositoryCustomization
