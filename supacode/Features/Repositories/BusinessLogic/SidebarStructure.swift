@@ -611,6 +611,7 @@ extension RepositoriesFeature.Action {
       // always follows `.gitEnvironmentChanged`, so this needs no invalidation.
       .gitEnvironmentChanged,
       .openRepositories,
+      .addResolvedRoots, .presentNestedFolderPrompt, .nestedFolderPrompt,
       .revealSelectedWorktreeInSidebar, .revealHoistedWorktreeInSidebar,
       .consumePendingSidebarReveal,
       .createRandomWorktree,

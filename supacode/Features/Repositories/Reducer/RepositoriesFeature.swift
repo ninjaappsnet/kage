@@ -295,6 +295,7 @@ struct RepositoriesFeature {
     @Presents var renameBranchPrompt: RenameBranchFeature.State?
     @Presents var remoteConnectionForm: RemoteConnectionFormFeature.State?
     @Presents var cloneRepositoryForm: CloneRepositoryFormFeature.State?
+    @Presents var nestedFolderPrompt: NestedFolderPromptFeature.State?
     @Presents var alert: AlertState<Alert>?
 
     // MARK: - Sidebar items (per-row TCA collection).
@@ -415,6 +416,11 @@ struct RepositoriesFeature {
       invalidRoots: [String],
       roots: [URL]
     )
+    /// Registers already-resolved paths verbatim, skipping the `repoRoot`
+    /// walk-up. See `RepositoriesFeature+NestedFolder.swift`.
+    case addResolvedRoots([URL])
+    case presentNestedFolderPrompt([NestedFolderCandidate])
+    case nestedFolderPrompt(PresentationAction<NestedFolderPromptFeature.Action>)
     case selectWorktree(Worktree.ID?, focusTerminal: Bool = false)
     case selectWorktreeAtHotkeySlot(Int)
     case selectNextWorktree
@@ -3889,10 +3895,24 @@ struct RepositoriesFeature {
           let existingRootPaths = RepositoryPathNormalizer.normalize(loadedPaths)
           var resolvedRoots: [URL] = []
           var invalidRoots: [String] = []
+          var nestedCandidates: [NestedFolderCandidate] = []
+          let existingRootPathSet = Set(existingRootPaths)
           for url in urls {
             do {
               let root = try await gitClient.repoRoot(url)
-              resolvedRoots.append(root)
+              // `repoRoot` walks up to the enclosing repository. When that repo is
+              // already a row, silently deduping the pick away is the bug this
+              // guards: ask the user instead.
+              switch NestedFolderResolution.resolve(
+                pickedURL: url,
+                resolvedRoot: root,
+                existingRootPaths: existingRootPathSet
+              ) {
+              case .root(let resolved):
+                resolvedRoots.append(resolved)
+              case .nested(let candidate):
+                nestedCandidates.append(candidate)
+              }
             } catch {
               // `repoRoot` failed. A readable directory is still worth keeping: a
               // plain folder repo, or a real git repo we can't resolve because git
@@ -3928,6 +3948,9 @@ struct RepositoriesFeature {
               roots: mergedRoots
             )
           )
+          if !nestedCandidates.isEmpty {
+            await send(.presentNestedFolderPrompt(nestedCandidates))
+          }
         }
         .cancellable(id: CancelID.load, cancelInFlight: true)
 
@@ -4823,6 +4846,10 @@ struct RepositoriesFeature {
       case .renameBranchPrompt:
         return .none
 
+      case .addResolvedRoots, .presentNestedFolderPrompt, .nestedFolderPrompt:
+        // Handled by `nestedFolderPromptReducer` (RepositoriesFeature+NestedFolder.swift).
+        return .none
+
       case .contextMenuOpenWorktree(let worktreeID, let action):
         return .send(.delegate(.openWorktreeInApp(worktreeID, action)))
 
@@ -4888,6 +4915,10 @@ struct RepositoriesFeature {
     Self.cloneRepositoryFormReducer
       .ifLet(\.$cloneRepositoryForm, action: \.cloneRepositoryForm) {
         CloneRepositoryFormFeature()
+      }
+    nestedFolderPromptReducer
+      .ifLet(\.$nestedFolderPrompt, action: \.nestedFolderPrompt) {
+        NestedFolderPromptFeature()
       }
     worktreeArchiveReducer
     worktreeRemovalReducer
@@ -5248,13 +5279,13 @@ struct RepositoriesFeature {
 
   /// Result of a local repository load. A struct rather than a tuple so the
   /// three payloads travel together without tripping the `large_tuple` lint.
-  private struct RepositoriesLoadResult {
+  struct RepositoriesLoadResult {
     let repositories: [Repository]
     let failures: [LoadFailure]
     let environmentError: GitEnvironmentError?
   }
 
-  private func loadRepositoriesData(_ roots: [URL]) async -> RepositoriesLoadResult {
+  func loadRepositoriesData(_ roots: [URL]) async -> RepositoriesLoadResult {
     let fetchResults = await withTaskGroup(of: WorktreesFetchResult.self) { group in
       for root in roots {
         let gitClient = self.gitClient
