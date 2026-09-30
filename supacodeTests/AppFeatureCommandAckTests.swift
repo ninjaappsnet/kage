@@ -1120,8 +1120,17 @@ struct AppFeatureCommandAckTests {
   }
 
   @Test(.dependencies) func deleteSocketDeeplinkFailsOnScriptCancellation() async {
-    let worktree = makeWorktree()
-    let store = makeStore(worktree: worktree, tabExists: true)
+    // The delete script is what makes this test's premise true. Without one the
+    // deeplink takes the scriptless path — `.deleteWorktreeApply` →
+    // `.worktreeDeleted` → ack `ok: true` — and the synthetic cancellation below
+    // only wins that race on an unloaded machine, so the test failed under the
+    // full parallel suite. With a script the row parks in `.deletingScript` and
+    // the cancellation is the only thing that can resolve the ack.
+    let worktree = makeWorktree(repoRoot: "/tmp/repo-delete-cancel")
+    @Shared(.repositorySettings(worktree.repositoryRootURL, host: worktree.host)) var settings
+    $settings.withLock { $0.deleteScript = "echo delete" }
+    defer { $settings.withLock { $0.deleteScript = "" } }
+    let store = makeStore(worktree: worktree, tabExists: true, reconcileSidebar: true)
     let (readFD, writeFD) = makePipe()
     defer { close(readFD) }
 
@@ -1901,21 +1910,25 @@ struct AppFeatureCommandAckTests {
     #expect(!removal)
   }
 
-  private func makeWorktree() -> Worktree {
+  /// `repoRoot` lets a test that has to write `@Shared(.repositorySettings(...))`
+  /// use a root of its own, so a seeded script can't leak into the other tests
+  /// running concurrently against the default root.
+  private func makeWorktree(repoRoot: String = "/tmp/repo") -> Worktree {
     Worktree(
-      id: WorktreeID("/tmp/repo/wt-1"),
+      id: WorktreeID("\(repoRoot)/wt-1"),
       name: "wt-1",
       detail: "detail",
-      workingDirectory: URL(fileURLWithPath: "/tmp/repo/wt-1"),
-      repositoryRootURL: URL(fileURLWithPath: "/tmp/repo"),
+      workingDirectory: URL(fileURLWithPath: "\(repoRoot)/wt-1"),
+      repositoryRootURL: URL(fileURLWithPath: repoRoot),
     )
   }
 
   private func makeRepositoriesState(worktree: Worktree) -> RepositoriesFeature.State {
+    let root = worktree.repositoryRootURL
     let repository = Repository(
-      id: "/tmp/repo",
-      rootURL: URL(fileURLWithPath: "/tmp/repo"),
-      name: "repo",
+      id: Repository.ID(root.path(percentEncoded: false)),
+      rootURL: root,
+      name: root.lastPathComponent,
       worktrees: [worktree],
     )
     var repositoriesState = RepositoriesFeature.State()
@@ -1928,11 +1941,15 @@ struct AppFeatureCommandAckTests {
   private func makeStore(
     worktree: Worktree,
     tabExists: Bool,
+    reconcileSidebar: Bool = false,
     _ extraDependencies: (inout DependencyValues) -> Void = { _ in }
   ) -> TestStoreOf<AppFeature> {
+    var repositoriesState = makeRepositoriesState(worktree: worktree)
+    // Only tests that drive row lifecycle need the sidebar populated.
+    if reconcileSidebar { repositoriesState.reconcileSidebarForTesting() }
     let store = TestStore(
       initialState: AppFeature.State(
-        repositories: makeRepositoriesState(worktree: worktree),
+        repositories: repositoriesState,
         settings: SettingsFeature.State()
       )
     ) {
