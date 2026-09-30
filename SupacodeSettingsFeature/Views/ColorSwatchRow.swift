@@ -10,17 +10,6 @@ public struct ColorSwatchRow: View {
     _color = color
   }
 
-  // Only panel-driven drags route through `set`; predefined / Default clicks set `color` directly.
-  private var customColorBinding: Binding<Color> {
-    Binding(
-      get: { color?.color ?? .accentColor },
-      set: { newValue in
-        guard let custom = RepositoryColor.custom(from: newValue) else { return }
-        color = custom
-      }
-    )
-  }
-
   public var body: some View {
     HStack(spacing: 8) {
       DefaultSwatchButton(
@@ -39,7 +28,7 @@ public struct ColorSwatchRow: View {
         .padding(.horizontal, 2)
       CustomSwatchButton(
         isSelected: color?.isCustom == true,
-        color: customColorBinding,
+        color: $color,
       )
     }
   }
@@ -95,15 +84,18 @@ private struct ColorSwatchButton: View {
 
 private struct CustomSwatchButton: View {
   let isSelected: Bool
-  @Binding var color: Color
+  @Binding var color: RepositoryColor?
+
+  @State private var isPresentingPicker = false
 
   var body: some View {
-    // Hidden `ColorPicker` opens the system color panel on click; the visible circle is purely decorative.
-    ZStack {
-      ColorPicker("Custom Color", selection: $color, supportsOpacity: false)
-        .labelsHidden()
-        .opacity(0.02)
-        .frame(width: 24, height: 24)
+    // An in-app popover, not SwiftUI's `ColorPicker`: that one instantiates the
+    // shared `NSColorPanel`, whose KVO bindings turn any later
+    // `.textSelection(.enabled)` update into an AppKit layout loop that crashes
+    // the app. See `CustomColorPopover`.
+    Button {
+      isPresentingPicker = true
+    } label: {
       Circle()
         .fill(
           AngularGradient(
@@ -113,17 +105,19 @@ private struct CustomSwatchButton: View {
         )
         .overlay {
           Circle()
-            .fill(color)
+            .fill(color?.color ?? .clear)
             .padding(7)
         }
         .frame(width: 24, height: 24)
-        .allowsHitTesting(false)
+        .modifier(SwatchSelectionRing(isSelected: isSelected))
     }
-    .modifier(SwatchSelectionRing(isSelected: isSelected))
-    .accessibilityElement(children: .ignore)
+    .buttonStyle(.plain)
+    .popover(isPresented: $isPresentingPicker, arrowEdge: .bottom) {
+      CustomColorPopover(color: $color)
+    }
     .accessibilityLabel("Custom")
-    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-    .help("Custom")
+    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    .help("Custom color")
   }
 }
 
@@ -143,9 +137,11 @@ private struct SwatchSelectionRing: ViewModifier {
 }
 
 extension View {
-  // Closes the shared color panel so the singleton doesn't outlive this view.
+  // Belt-and-braces: the swatch row no longer opens the shared color panel, but
+  // AppKit still can (a text view's Font menu, for one), and a panel left open
+  // behind a sheet can shadow the main window.
   // `public` is required: `supacode` (RepositoryCustomizationView) consumes this across module boundaries.
   public func dismissSystemColorPanelOnDisappear() -> some View {
-    onDisappear { NSColorPanel.shared.orderOut(nil) }
+    onDisappear { SystemColorPanel.closeIfOpen() }
   }
 }

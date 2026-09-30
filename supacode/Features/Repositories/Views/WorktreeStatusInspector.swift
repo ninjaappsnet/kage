@@ -226,9 +226,19 @@ private struct GitInspectorContent: View {
               text: pullRequest.isDraft ? "DRAFT" : badge.text,
               color: badge.color)
           }
+          // Not `.textSelection(.enabled)`: the title re-renders on every PR
+          // refresh, and selectable text is an NSTextField that pushes typing
+          // attributes into the shared NSColorPanel mid-layout, looping AppKit's
+          // layout pass until it raises. Copy lives in the context menu instead.
           Text(pullRequest.title)
             .appFont(.headline)
-            .textSelection(.enabled)
+            .contextMenu {
+              Button("Copy Title") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(pullRequest.title, forType: .string)
+              }
+              .help("Copy the pull request title")
+            }
           Text(
             "`\(pullRequest.baseRefName ?? "base")` ← `\(pullRequest.headRefName ?? "branch")`"
           )

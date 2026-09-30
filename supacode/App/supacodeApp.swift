@@ -68,12 +68,15 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
     UserDefaults.standard.register(defaults: [
       "ApplePressAndHoldEnabled": false
     ])
-    // `NSColorPanel.shared` is `isRestorable = true` by default, so
-    // the system writes its visibility to the app's restoration
-    // archive and brings it back on next launch — independently of
-    // the main window. Opt the singleton out per-process so a panel
-    // left open from a previous session can't survive the relaunch.
-    NSColorPanel.shared.isRestorable = false
+    // `NSColorPanel.shared` is `isRestorable = true` by default, so the system
+    // writes its visibility to the app's restoration archive and brings it back
+    // on next launch — independently of the main window. Opt an existing panel
+    // out per-process. Crucially this goes through `SystemColorPanel`, which
+    // guards on `sharedColorPanelExists`: touching `.shared` directly *creates*
+    // the singleton, and a live color panel turns any later
+    // `.textSelection(.enabled)` update into an AppKit layout loop that crashes
+    // the app.
+    SystemColorPanel.disableRestorationIfOpen()
     guard let appStore else {
       SupaLogger("App").error("applicationDidFinishLaunching with no store; launch setup skipped.")
       return

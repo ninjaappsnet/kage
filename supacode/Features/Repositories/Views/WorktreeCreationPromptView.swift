@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import SupacodeSettingsFeature
 import SupacodeSettingsShared
@@ -106,10 +107,21 @@ private struct WorktreeCreationFooter: View {
       Text(message)
         .foregroundStyle(.red)
     } else {
+      // Deliberately not `.textSelection(.enabled)`: this preview rewrites on
+      // every keystroke, and SwiftUI backs selectable text with an NSTextField
+      // whose typing-attribute sync pushes color into the shared NSColorPanel
+      // mid-layout. That re-entrant invalidation is an AppKit layout loop that
+      // crashes the app. The context menu covers the actual need (copying).
       Text(store.resolvedWorktreeLocationPreview)
         .monospaced()
-        .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contextMenu {
+          Button("Copy Path") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(store.resolvedWorktreeLocationPreview, forType: .string)
+          }
+          .help("Copy the resolved worktree path")
+        }
     }
   }
 }
