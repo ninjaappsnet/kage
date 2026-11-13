@@ -257,6 +257,7 @@ jobs:
             build/Kage.app.zip
             build/appcast.xml
             build/*.delta
+          retention-days: 7
       # A hosted runner is discarded after the job; a self-hosted one is not, so the
       # signing keychain and the search-list/default changes above have to be undone
       # or they outlive the run and break the machine's normal keychain use.
