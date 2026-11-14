@@ -1,6 +1,7 @@
 import Dependencies
 import Foundation
 import OrderedCollections
+import Sharing
 import SupacodeSettingsShared
 
 nonisolated extension SettingsRelocationMigrator {

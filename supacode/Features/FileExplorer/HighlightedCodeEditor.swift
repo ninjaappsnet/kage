@@ -117,6 +117,8 @@ struct HighlightedCodeEditor: NSViewRepresentable {
     var text: Binding<String>
     var themeIsDark: Bool?
 
+    nonisolated deinit {}
+
     init(text: Binding<String>) { self.text = text }
 
     func textDidChange(_ notification: Notification) {

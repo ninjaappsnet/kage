@@ -31,6 +31,8 @@ final class HTMLPreviewSchemeHandler: NSObject, WKURLSchemeHandler {
   /// policy. Distinct from CSP violations, which the page reports itself.
   var onDeniedRequest: ((URL) -> Void)?
 
+  nonisolated deinit {}
+
   init(rootDirectory: URL, entryFileName: String) {
     self.rootDirectory = rootDirectory
     self.entryFileName = entryFileName

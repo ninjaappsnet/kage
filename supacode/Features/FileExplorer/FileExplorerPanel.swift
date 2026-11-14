@@ -98,13 +98,10 @@ struct FileExplorerPanel: View {
       }
       .buttonStyle(.borderless)
       .help(
-        """
-        Close File Explorer \
-        (\(WorktreeDetailView.resolveShortcutDisplay(
-          for: AppShortcuts.toggleFileExplorer,
-          overrides: settingsFile.global.shortcutOverrides
-        )))
-        """
+        AppShortcut.helpText(
+          "Close File Explorer",
+          shortcut: AppShortcuts.toggleFileExplorer.effective(from: settingsFile.global.shortcutOverrides)
+        )
       )
     }
     .imageScale(.medium)

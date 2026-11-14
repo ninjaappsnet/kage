@@ -22,6 +22,8 @@ final class FileViewerContent: TabContent {
   private lazy var viewerChrome = FileViewerTabChrome(model: model)
   private var hostingView: NSHostingView<FileViewerTabView>?
 
+  nonisolated deinit {}
+
   init(id: ContentID, fileURL: URL) {
     self.id = id
     self.fileURL = fileURL
@@ -90,6 +92,8 @@ final class FileViewerContent: TabContent {
 @MainActor
 final class FileViewerTabChrome: TabChrome {
   private let model: FileViewerModel
+
+  nonisolated deinit {}
 
   init(model: FileViewerModel) {
     self.model = model

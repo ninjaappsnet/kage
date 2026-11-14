@@ -42,6 +42,8 @@ final class FileExplorerModel {
   private var expanded: Set<URL> = []
   private var watcher: FileSystemEventWatcher?
 
+  nonisolated deinit {}
+
   init(rootURL: URL) {
     self.rootURL = rootURL.standardizedFileURL
     reload()

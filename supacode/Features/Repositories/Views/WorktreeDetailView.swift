@@ -806,13 +806,10 @@ struct WorktreeDetailView: View {
         // Local paths only — a remote worktree has nothing on disk to browse.
         .disabled(toolbarState.remoteOpenHost != nil)
         .help(
-          """
-          Toggle File Explorer \
-          (\(WorktreeDetailView.resolveShortcutDisplay(
-            for: AppShortcuts.toggleFileExplorer,
-            overrides: settingsFile.global.shortcutOverrides
-          )))
-          """
+          AppShortcut.helpText(
+            "Toggle File Explorer",
+            shortcut: AppShortcuts.toggleFileExplorer.effective(from: settingsFile.global.shortcutOverrides)
+          )
         )
       }
 

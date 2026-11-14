@@ -59,6 +59,8 @@ struct HTMLPreviewWebView: NSViewRepresentable {
     private let entryFileName: String
     private var appliedTrust: Bool
 
+    nonisolated deinit {}
+
     init(fileURL: URL, isTrusted: Bool) {
       // The document's own directory is the root, not the worktree: a report
       // reaches its sibling stylesheet and nothing above it, so `.env` and

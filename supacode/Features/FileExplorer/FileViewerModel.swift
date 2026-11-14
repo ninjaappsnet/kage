@@ -77,6 +77,8 @@ final class FileViewerModel {
     loadState == .loaded && fileByteCount <= FileViewerFileType.maxHighlightBytes
   }
 
+  nonisolated deinit {}
+
   /// Load `url` into the editor, classifying it as markdown / code / binary and
   /// guarding against oversized files.
   func open(_ url: URL) {

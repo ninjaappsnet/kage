@@ -1,5 +1,6 @@
 import Dependencies
 import Foundation
+import Sharing
 import SupacodeSettingsShared
 
 /// Injectable file-system seam for the brand migration. Directory-aware, unlike
