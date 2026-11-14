@@ -164,6 +164,9 @@ private struct SettingsSidebarView: View {
       Label("Global Scripts", systemImage: "terminal")
         .appFont(.body)
         .tag(SettingsSection.scripts)
+      Label("Claude Accounts", systemImage: "person.2")
+        .appFont(.body)
+        .tag(SettingsSection.claudeAccounts)
       if UpstreamLicensingAvailability.isEnabled {
         Label("License", systemImage: "key")
           .appFont(.body)
@@ -212,6 +215,7 @@ private struct SettingsDetailView: View {
   @Bindable var settingsStore: StoreOf<SettingsFeature>
   let updatesStore: StoreOf<UpdatesFeature>
   let licenseStore: StoreOf<LicenseFeature>
+  let claudeAccountsStore: StoreOf<ClaudeAccountsFeature>
   @Environment(GhosttyShortcutManager.self) private var ghosttyShortcuts: GhosttyShortcutManager?
 
   var body: some View {
@@ -234,6 +238,11 @@ private struct SettingsDetailView: View {
       KeyboardShortcutsSettingsView(store: settingsStore)
     case .license:
       LicenseSettingsView(store: licenseStore)
+    case .claudeAccounts:
+      ClaudeAccountsSettingsView(
+        store: claudeAccountsStore,
+        repositories: settingsStore.repositorySummaries.filter { !$0.isRemote }
+      )
     case .updates:
       UpdatesSettingsView(settingsStore: settingsStore, updatesStore: updatesStore)
     case .forges:
@@ -324,7 +333,8 @@ struct SettingsView: View {
         selectedRepositorySummary: selectedRepositorySummary,
         settingsStore: settingsStore,
         updatesStore: updatesStore,
-        licenseStore: store.scope(state: \.license, action: \.license)
+        licenseStore: store.scope(state: \.license, action: \.license),
+        claudeAccountsStore: store.scope(state: \.claudeAccounts, action: \.claudeAccounts)
       )
     }
     .toolbar {

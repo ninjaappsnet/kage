@@ -11,6 +11,7 @@ public enum SettingsSection: Hashable {
   case license
   case forges
   case scripts
+  case claudeAccounts
   case repository(String)
   case repositoryScripts(String)
 

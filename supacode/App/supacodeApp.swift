@@ -407,8 +407,11 @@ struct SupacodeApp: App {
         ).wire(view, contentID: request.contentID)
       },
       environmentExtras: { [weak terminalManager] request in
-        terminalManager?.hostIfExists(for: request.worktreeID)?
-          .blockingScriptEnvironment(for: request.tabID) ?? [:]
+        let host = terminalManager?.hostIfExists(for: request.worktreeID)
+        return (host?.blockingScriptEnvironment(for: request.tabID) ?? [:])
+          .merging(ClaudeAccountEnvironment.variables(tabID: request.tabID.rawValue, worktree: host?.worktree)) {
+            current, _ in current
+          }
       }
     ).factory()
   }
@@ -676,6 +679,7 @@ struct SupacodeApp: App {
       Group {
         TerminalCommands()
         TerminalTabSelectionCommands(store: store)
+        ClaudeAccountCommands(store: store)
       }
       WindowCommands()
       CommandGroup(after: .textEditing) {

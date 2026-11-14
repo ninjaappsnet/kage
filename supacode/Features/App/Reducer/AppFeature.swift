@@ -92,6 +92,7 @@ struct AppFeature {
     var settings: SettingsFeature.State
     var updates = UpdatesFeature.State()
     var license = LicenseFeature.State()
+    var claudeAccounts = ClaudeAccountsFeature.State()
     var commandPalette = CommandPaletteFeature.State()
     /// Terminal-orchestration state. Owns the per-tab feature collection so
     /// tab-bar views scope through `\.terminals` (narrow) instead of the full
@@ -294,6 +295,7 @@ struct AppFeature {
     case refreshWorktreesRequested
     case settings(SettingsFeature.Action)
     case license(LicenseFeature.Action)
+    case claudeAccounts(ClaudeAccountsFeature.Action)
     case updates(UpdatesFeature.Action)
     case commandPalette(CommandPaletteFeature.Action)
     case openActionSelectionChanged(OpenWorktreeAction)
@@ -405,6 +407,7 @@ struct AppFeature {
           .send(.repositories(.task)),
           .send(.settings(.task)),
           licenseClient.isEnforced ? .send(.license(.task)) : .none,
+          .send(.claudeAccounts(.task)),
           .send(.terminals(.task)),
           .run { @MainActor send in
             guard startupHotkey != nil else { return }
@@ -1576,6 +1579,8 @@ struct AppFeature {
         return .send(.license(.deactivate))
       case .license:
         return .none
+      case .claudeAccounts:
+        return .none
       case .repositories(.createRandomWorktreeSucceeded(let worktree, _, let pendingID, _)):
         // Bind this creation's ack (matched by its pending id) to the real
         // worktree id so its first tab resolves it.
@@ -2156,6 +2161,9 @@ struct AppFeature {
     }
     Scope(state: \.license, action: \.license) {
       LicenseFeature()
+    }
+    Scope(state: \.claudeAccounts, action: \.claudeAccounts) {
+      ClaudeAccountsFeature()
     }
     Scope(state: \.updates, action: \.updates) {
       UpdatesFeature()
