@@ -52,7 +52,7 @@ class SparkleUpdateDelegate: NSObject, SPUUpdaterDelegate {
         userInfo: [
           NSLocalizedDescriptionKey: "This update is outside your included updates.",
           NSLocalizedRecoverySuggestionErrorKey:
-            "Renew updates in Supacode's License settings, or keep using your current release.",
+            "Renew updates in Kage's License settings, or keep using your current release.",
         ]
       )
     }

@@ -71,11 +71,11 @@ public struct TerminalSettingsView: View {
         }
         Toggle(isOn: $store.isTerminalBackgroundTransparent) {
           Text("Transparent background")
-          Text("Render the Supacode theme with a translucent, blurred background.")
+          Text("Render the Kage theme with a translucent, blurred background.")
         }
         .disabled(!store.terminalThemeSyncEnabled)
       } footer: {
-        Text("Transparent background preferences only apply to the Supacode theme.")
+        Text("Transparent background preferences only apply to the Kage theme.")
       }
       Section("Persistence") {
         Toggle(isOn: $store.terminateSessionsOnQuit) {

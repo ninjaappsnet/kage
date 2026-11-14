@@ -1350,8 +1350,8 @@ private struct MultiSelectedWorktreesDetailView: View {
           actions: isMixedKindSelection
             ? []
             : [
-              AppShortcut.helpText("Remove selected from Supacode", shortcut: deleteShortcut),
-              "Right-click any selected folder to remove them all from Supacode.",
+              AppShortcut.helpText("Remove selected from Kage", shortcut: deleteShortcut),
+              "Right-click any selected folder to remove them all from Kage.",
             ]
         )
       }

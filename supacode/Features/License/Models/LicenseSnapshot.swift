@@ -88,13 +88,13 @@ nonisolated enum LicenseError: Error, Equatable, LocalizedError, Sendable {
     case .licenseRequired:
       "Your five free local worktree creations have been used. Activate a license to create more. SSH creation is free."
     case .invalidKey:
-      "Enter a valid Supacode license key."
+      "Enter a valid Kage license key."
     case .invalidEntitlement:
       "The license server returned an invalid entitlement."
     case .missingDeviceIdentity:
-      "Supacode could not identify this Mac. Try again after restarting the app."
+      "Kage could not identify this Mac. Try again after restarting the app."
     case .storageUnavailable:
-      "Supacode could not read or save licensing data in Keychain. Unlock your login Keychain and try again."
+      "Kage could not read or save licensing data in Keychain. Unlock your login Keychain and try again."
     case .creationInProgress:
       "A worktree with this branch is already being created."
     case .trialCreationsPending:

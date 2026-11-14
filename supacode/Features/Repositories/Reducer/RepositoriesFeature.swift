@@ -5628,7 +5628,7 @@ struct RepositoriesFeature {
       repositoriesLogger.error(
         "Couldn't verify failed creation of \(target.branchName) at \(path): \(error.localizedDescription)")
       var problems = [
-        "Supacode couldn't check what was left at \(path) or on branch '\(target.branchName)'. "
+        "Kage couldn't check what was left at \(path) or on branch '\(target.branchName)'. "
           + "Remove them manually if they appear."
       ]
       if let permit, let problem = await settleCreationPermit(permit, directory: target.directory, send: send) {

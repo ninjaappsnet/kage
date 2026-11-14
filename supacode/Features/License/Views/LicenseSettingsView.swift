@@ -35,9 +35,9 @@ struct LicenseSettingsView: View {
       Section {
         LabeledContent {
           Button("Buy\u{2026}") { store.send(.buy) }
-            .help("Open the Supacode checkout in your browser.")
+            .help("Open the Kage checkout in your browser.")
         } label: {
-          Text("Buy Supacode")
+          Text("Buy Kage")
           Text("Purchase a license in your browser.")
         }
         LabeledContent {
@@ -144,7 +144,7 @@ private struct LicenseManageSection: View {
           .help("Check the license server for renewed updates or license changes.")
       } label: {
         Text("Refresh license")
-        Text("Supacode checks for license changes once a day.")
+        Text("Kage checks for license changes once a day.")
       }
       LabeledContent {
         HStack {
