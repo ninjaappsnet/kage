@@ -128,9 +128,9 @@ Consequences that are not obvious from the workflow files:
   never cancel a release build that already holds it.
 - **The runner group must allow public repositories.** kage is public; without
   that checkbox, jobs queue forever while the runners still display as Idle.
-- **The runner host needs Xcode 26.3** installed alongside whatever is newer,
-  because the pinned Zig 0.15.2 cannot link the macOS 26.4+ SDK. `xcodes install
-  26.3` works. Verify the whole prerequisite set there with `make doctor`.
+- **The runner host needs a full Xcode** with a macOS 26+ SDK (license accepted,
+  first launch run, Metal Toolchain installed). Since the Zig 0.16 bump no
+  specific Xcode version is required. Verify the whole set there with `make doctor`.
 
 Because the repo is public and PR CI is self-hosted, untrusted code from a pull
 request executes on that machine. Keep "Require approval for all outside
