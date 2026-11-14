@@ -228,3 +228,13 @@ notarization secrets, and Sparkle key handling live in
 cutting a release or touching `.github/workflows/`. In particular: never bump a
 version unprompted, and pushes touching only workflows or docs deliberately
 produce no build.
+
+## Claude Accounts (fork feature)
+
+- Settings → Claude Accounts runs several Claude Code logins side by side. Code lives in `supacode/Features/ClaudeAccounts/`; upstream files only carry the wiring (a `SettingsSection` case, the sidebar row and detail arm in `SettingsView`, the scoped reducer in `AppFeature`, the `environmentExtras` merge and `ClaudeAccountCommands` in `supacodeApp.swift`).
+- The main account is plain `~/.claude` and is never stored. Every other account is a `CLAUDE_CONFIG_DIR` under `~/.kage/claude-accounts/<slug>`, whose shared entries (`projects/`, `skills/`, `agents/`, `commands/`, `output-styles/`, `plugins/`, `settings.json`, `CLAUDE.md`, `history.jsonl`, `keybindings.json`) are symlinks into `~/.claude` (`ClaudeAccountLayout.sharedEntries`). `.claude.json`, the Keychain login and `sessions/` stay per account. The directory path never moves and is stored without a trailing slash: Claude Code keys the Keychain entry to the exact `CLAUDE_CONFIG_DIR` string.
+- Layout repair runs on every launch and never deletes: a real item where a link belongs is adopted into the hub, merged child by child, or moved under `.kage-unlinked/<timestamp>/`.
+- User-scope MCP servers live in each account's `.claude.json`, so `ClaudeMCPServerSync` three-way merges them against `ClaudeAccountsFile.mcpServersBaseline` (main wins conflicts; absence is a value, so removals propagate) and writes through `claude mcp add-json` / `remove`, never by editing `.claude.json` directly.
+- Session account resolution (`ClaudeAccountsFile.resolvedAccount`): tab assignment (File → New Tab with Claude Account) → repository override → default. It is applied once per surface in `ClaudeAccountEnvironment`; a running zmx session keeps the account it started with. Remote worktrees get nothing.
+- Choices persist in `~/.config/kage/claude-accounts.json` (`ClaudeAccountsFileKey`), never in `kage.json`, so they are never committed.
+- Reminders: `claude auth status --json` (`loggedIn`, `loginExpiresAt`) is polled on launch and every 30 minutes. A notification fires at most once a day per account when its login is within 3 days of expiry, or has expired / logged out after having been logged in. A logout the user did themselves clears `loggedInAccountIDs` so it stays quiet.
