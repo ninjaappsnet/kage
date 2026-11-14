@@ -307,7 +307,7 @@ struct LicenseTests {
       $0.isBusy = false
       $0.failure = LicenseFeature.Failure(LicenseError.invalidKey)
     }
-    #expect(store.state.failure?.message == "Enter a valid Supacode license key.")
+    #expect(store.state.failure?.message == "Enter a valid Kage license key.")
     #expect(store.state.failure?.macLimit == nil)
   }
 
