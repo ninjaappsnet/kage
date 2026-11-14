@@ -164,9 +164,11 @@ private struct SettingsSidebarView: View {
       Label("Global Scripts", systemImage: "terminal")
         .appFont(.body)
         .tag(SettingsSection.scripts)
-      Label("License", systemImage: "key")
-        .appFont(.body)
-        .tag(SettingsSection.license)
+      if UpstreamLicensingAvailability.isEnabled {
+        Label("License", systemImage: "key")
+          .appFont(.body)
+          .tag(SettingsSection.license)
+      }
       Label("Updates", systemImage: "arrow.down.circle")
         .appFont(.body)
         .tag(SettingsSection.updates)

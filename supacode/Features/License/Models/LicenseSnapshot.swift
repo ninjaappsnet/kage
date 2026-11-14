@@ -5,7 +5,7 @@ nonisolated enum LicenseBuild {
     #if DEBUG
       false
     #else
-      true
+      UpstreamLicensingAvailability.isEnabled
     #endif
   }
 
