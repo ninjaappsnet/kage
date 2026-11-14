@@ -440,12 +440,12 @@ struct LicenseTests {
         TextState("Cancel")
       }
       ButtonState(action: .buy) {
-        TextState("Buy Supacode")
+        TextState("Buy Kage")
       }
     } message: {
       TextState(
         """
-        A Supacode license is required to create more local worktrees. \
+        A Kage license is required to create more local worktrees. \
         Buy a license on the website, or activate an existing license in Settings → License.
         """
       )
