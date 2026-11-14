@@ -16,12 +16,20 @@ private struct RepositoryLabel: View {
   @State private var avatarURL: URL?
   @Dependency(GitClientDependency.self) private var gitClient
 
+  init(name: String, rootURL: URL, isGitRepository: Bool) {
+    self.name = name
+    self.rootURL = rootURL
+    self.isGitRepository = isGitRepository
+    _avatarURL = State(initialValue: isGitRepository ? GitHubOwnerAvatar.cachedURL(for: rootURL) : nil)
+  }
+
   var body: some View {
     Label {
       Text(name)
     } icon: {
       if isGitRepository {
         KFImage(avatarURL)
+          .startLoadingBeforeViewAppear()
           .placeholder {
             Image(systemName: "arrow.trianglehead.branch")
               .padding(-3)
@@ -156,6 +164,9 @@ private struct SettingsSidebarView: View {
       Label("Global Scripts", systemImage: "terminal")
         .appFont(.body)
         .tag(SettingsSection.scripts)
+      Label("License", systemImage: "key")
+        .appFont(.body)
+        .tag(SettingsSection.license)
       Label("Updates", systemImage: "arrow.down.circle")
         .appFont(.body)
         .tag(SettingsSection.updates)
@@ -198,6 +209,7 @@ private struct SettingsDetailView: View {
   let selectedRepositorySummary: SettingsRepositorySummary?
   @Bindable var settingsStore: StoreOf<SettingsFeature>
   let updatesStore: StoreOf<UpdatesFeature>
+  let licenseStore: StoreOf<LicenseFeature>
   @Environment(GhosttyShortcutManager.self) private var ghosttyShortcuts: GhosttyShortcutManager?
 
   var body: some View {
@@ -218,6 +230,8 @@ private struct SettingsDetailView: View {
       DeveloperSettingsView(store: settingsStore)
     case .shortcuts:
       KeyboardShortcutsSettingsView(store: settingsStore)
+    case .license:
+      LicenseSettingsView(store: licenseStore)
     case .updates:
       UpdatesSettingsView(settingsStore: settingsStore, updatesStore: updatesStore)
     case .forges:
@@ -307,7 +321,8 @@ struct SettingsView: View {
         selection: selection,
         selectedRepositorySummary: selectedRepositorySummary,
         settingsStore: settingsStore,
-        updatesStore: updatesStore
+        updatesStore: updatesStore,
+        licenseStore: store.scope(state: \.license, action: \.license)
       )
     }
     .toolbar {

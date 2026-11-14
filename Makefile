@@ -11,6 +11,7 @@ CURRENT_MAKEFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CURRENT_MAKEFILE_DIR := $(patsubst %/,%,$(dir $(CURRENT_MAKEFILE_PATH)))
 PROJECT_WORKSPACE := $(CURRENT_MAKEFILE_DIR)/supacode.xcworkspace
 DERIVED_DATA_PATH := $(CURRENT_MAKEFILE_DIR)/.build/DerivedData
+DEBUG_APP_BUNDLE := $(DERIVED_DATA_PATH)/Build/Products/Debug/supacode.app
 APP_SCHEME := supacode
 PROJECT_CONFIG_PATH := Configurations/Project.xcconfig
 TUIST_GENERATION_STAMP_DIR := $(CURRENT_MAKEFILE_DIR)/.build/.tuist-generated-stamps
@@ -41,10 +42,8 @@ TEST_SCHEME := supacode-tests
 # text only lives in the result bundle, which `make test` dumps on failure.
 TEST_RESULT_BUNDLE := build/supacode-tests.xcresult
 
-# Export a Zig-linkable Xcode per build recipe (no global xcode-select -s). Plain
-# assignment so a missing Xcode aborts the recipe under -e. Generation needs it
-# as much as compilation: `tuist generate` lints the selected Xcode against the
-# project's version requirement, so a newer global Xcode fails it outright.
+# Export the selected Xcode per build recipe (no global xcode-select -s). Plain
+# assignment so a missing Xcode aborts the recipe under -e.
 SELECT_DEVELOPER_DIR = DEVELOPER_DIR="$$(./scripts/select-developer-dir.sh)"; export DEVELOPER_DIR
 
 .DEFAULT_GOAL := help
@@ -77,8 +76,7 @@ $(TUIST_GENERATION_STAMP_DIR)/%: $(TUIST_GENERATION_INPUTS) $(TUIST_INSTALL_STAM
 	find "$(TUIST_GENERATION_STAMP_DIR)" -mindepth 1 -maxdepth 1 ! -name '.installed' -delete
 	rm -rf supacode.xcodeproj supacode.xcworkspace
 	rm -rf "$(DERIVED_DATA_PATH)"
-	$(SELECT_DEVELOPER_DIR); \
-	mise exec -- tuist generate --no-open --cache-profile "$*"
+	$(SELECT_DEVELOPER_DIR); mise exec -- tuist generate --no-open --cache-profile "$*"
 	touch "$@"
 
 # Consumes the warmed Release binary cache, so archive compiles only the app shell.
@@ -87,8 +85,7 @@ $(TUIST_RELEASE_GENERATION_STAMP): $(TUIST_GENERATION_INPUTS) $(TUIST_INSTALL_ST
 	find "$(TUIST_GENERATION_STAMP_DIR)" -mindepth 1 -maxdepth 1 ! -name '.installed' -delete
 	rm -rf supacode.xcodeproj supacode.xcworkspace
 	rm -rf "$(DERIVED_DATA_PATH)"
-	$(SELECT_DEVELOPER_DIR); \
-	mise exec -- tuist generate --no-open --cache-profile development --configuration Release
+	$(SELECT_DEVELOPER_DIR); mise exec -- tuist generate --no-open --cache-profile development --configuration Release
 	touch "$@"
 
 doctor: # Diagnose build prerequisites and print the fix for each failure
@@ -114,7 +111,8 @@ warm-cache: $(TUIST_INSTALL_STAMP) # Warm the full Tuist cacheable graph
 
 build-app: $(TUIST_DEVELOPMENT_GENERATION_STAMP) # Build the macOS app (Debug)
 	$(SELECT_DEVELOPER_DIR); \
-	bash -o pipefail -c 'xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Debug -derivedDataPath "$(DERIVED_DATA_PATH)" build -skipMacroValidation $(XCODEBUILD_FLAGS) 2>&1 | { mise exec -- xcbeautify --disable-logging || cat; }'
+	bash -o pipefail -c 'xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Debug -derivedDataPath "$(DERIVED_DATA_PATH)" build -skipMacroValidation $(XCODEBUILD_FLAGS) 2>&1 | { mise exec -- xcbeautify --disable-logging || cat; }' && \
+	./scripts/check-isolated-deinits.sh "$(DEBUG_APP_BUNDLE)"/Contents/MacOS/* "$(DEBUG_APP_BUNDLE)"/Contents/Resources/bin/supacode
 
 run-app: build-app # Build then launch (Debug) with log streaming
 	@$(SELECT_DEVELOPER_DIR); \
@@ -159,6 +157,7 @@ test: $(TUIST_DEVELOPMENT_GENERATION_STAMP) # Run all tests
 		xcodebuild test -workspace "$(PROJECT_WORKSPACE)" -scheme "$(TEST_SCHEME)" -destination "platform=macOS" -derivedDataPath "$(DERIVED_DATA_PATH)" -resultBundlePath "$(TEST_RESULT_BUNDLE)" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -skipMacroValidation -parallel-testing-enabled $(TEST_PARALLEL) || status=$$?; \
 	fi; \
 	[ $$status -eq 0 ] || ./scripts/print-test-failures.sh "$(TEST_RESULT_BUNDLE)" || true; \
+	[ $$status -ne 0 ] || ./scripts/check-isolated-deinits.sh "$(DEBUG_APP_BUNDLE)"/Contents/PlugIns/*.xctest/Contents/MacOS/* || status=1; \
 	exit $$status
 
 format: # Format code with swift-format (mise-pinned for reproducibility).

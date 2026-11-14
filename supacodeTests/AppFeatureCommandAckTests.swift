@@ -145,7 +145,9 @@ struct AppFeatureCommandAckTests {
     // a sibling creation in the same repo (different pending id) is untouched.
     await store.send(
       .repositories(
-        .createRandomWorktreeSucceeded(created, repositoryID: "/tmp/repo", pendingID: pendingID)))
+        .createRandomWorktreeSucceeded(
+          created, repositoryID: "/tmp/repo", pendingID: pendingID, ownership: .created(at: created))
+      ))
     #expect(store.state.pendingCommandAcks[id: writeFD] != nil)
 
     await store.send(.terminalEvent(.tabCreated(worktreeID: created.id)))
@@ -354,7 +356,10 @@ struct AppFeatureCommandAckTests {
 
     await store.send(.repositories(.cancelPendingWorktree(pendingID)))
     await store.send(
-      .repositories(.createRandomWorktreeSucceeded(created, repositoryID: "/tmp/repo", pendingID: pendingID)))
+      .repositories(
+        .createRandomWorktreeSucceeded(
+          created, repositoryID: "/tmp/repo", pendingID: pendingID, ownership: .created(at: created))
+      ))
     await store.finish()
 
     // The ack drained as cancelled instead of waiting on the watchdog.
@@ -382,8 +387,7 @@ struct AppFeatureCommandAckTests {
       .repositories(
         .createRandomWorktreeFailed(
           title: "Failed", message: "boom", pendingID: pendingID,
-          previousSelection: nil, repositoryID: "/tmp/repo", name: nil,
-          baseDirectory: URL(fileURLWithPath: "/tmp/repo"))))
+          previousSelection: nil, repositoryID: "/tmp/repo", cleanupTarget: nil)))
     await store.finish()
 
     #expect(store.state.pendingCommandAcks.isEmpty)
@@ -1120,17 +1124,33 @@ struct AppFeatureCommandAckTests {
   }
 
   @Test(.dependencies) func deleteSocketDeeplinkFailsOnScriptCancellation() async {
-    // The delete script is what makes this test's premise true. Without one the
-    // deeplink takes the scriptless path — `.deleteWorktreeApply` →
-    // `.worktreeDeleted` → ack `ok: true` — and the synthetic cancellation below
-    // only wins that race on an unloaded machine, so the test failed under the
-    // full parallel suite. With a script the row parks in `.deletingScript` and
-    // the cancellation is the only thing that can resolve the ack.
-    let worktree = makeWorktree(repoRoot: "/tmp/repo-delete-cancel")
-    @Shared(.repositorySettings(worktree.repositoryRootURL, host: worktree.host)) var settings
-    $settings.withLock { $0.deleteScript = "echo delete" }
-    defer { $settings.withLock { $0.deleteScript = "" } }
-    let store = makeStore(worktree: worktree, tabExists: true, reconcileSidebar: true)
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    let worktree = Worktree(
+      location: .local(workingDirectory: root.appending(path: "feature"), repositoryRoot: root),
+      kind: .git, name: "feature", detail: "", isAttached: false)
+    let repository = Repository(location: .local(root), kind: .git, name: "repo", worktrees: [worktree])
+    @Shared(.repositorySettings(root)) var settings
+    $settings.withLock { $0.deleteScript = "echo cleaning" }
+    var repositories = RepositoriesFeature.State()
+    repositories.repositories = [repository]
+    repositories.selection = .worktree(worktree.id)
+    repositories.isInitialLoadComplete = true
+    repositories.reconcileSidebarForTesting()
+    let removals = LockIsolated(0)
+    let initialState = AppFeature.State(repositories: repositories, settings: SettingsFeature.State())
+    let store = TestStore(initialState: initialState) {
+      AppFeature()
+    } withDependencies: {
+      $0.terminalClient.tabExists = { _, _ in true }
+      $0.terminalClient.surfaceExists = { _, _, _ in true }
+      $0.terminalClient.surfaceExistsInWorktree = { _, _ in true }
+      $0.terminalClient.send = { _ in }
+      $0.gitClient.removeWorktree = { _, _ in
+        removals.withValue { $0 += 1 }
+        return root
+      }
+    }
+    store.exhaustivity = .off
     let (readFD, writeFD) = makePipe()
     defer { close(readFD) }
 
@@ -1143,6 +1163,8 @@ struct AppFeatureCommandAckTests {
       )
     )
     #expect(store.state.pendingCommandAcks[id: writeFD] != nil)
+    await store.receive(\.repositories.delegate.runBlockingScript)
+    #expect(store.state.repositories.sidebarItems[id: worktree.id]?.lifecycle == .deletingScript)
 
     // Closing the delete-script tab reports a nil exit code (cancellation);
     // no `.worktreeDeleted` follows, so the ack must drain as a failure now.
@@ -1153,6 +1175,7 @@ struct AppFeatureCommandAckTests {
 
     #expect(store.state.pendingCommandAcks.isEmpty)
     #expect(readPipeJSON(readFD)?["ok"] as? Bool == false)
+    #expect(removals.value == 0)
   }
 
   @Test(.dependencies) func deleteSocketDeeplinkRejectsTerminatingWorktree() async {

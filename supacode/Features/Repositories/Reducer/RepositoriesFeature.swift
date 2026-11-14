@@ -37,16 +37,16 @@ private nonisolated let toastAutoDismissDelay: Duration = .milliseconds(2500)
 private nonisolated let delayedPullRequestRefreshDelay: Duration = .seconds(2)
 
 /// Injected so the open paths stay testable without launching a real browser.
-struct URLOpenerClient: Sendable {
+nonisolated struct URLOpenerClient: Sendable {
   var open: @Sendable (URL) -> Void
 }
 
-extension URLOpenerClient: DependencyKey {
+nonisolated extension URLOpenerClient: DependencyKey {
   static let liveValue = URLOpenerClient { NSWorkspace.shared.open($0) }
   static let testValue = URLOpenerClient { _ in }
 }
 
-extension DependencyValues {
+nonisolated extension DependencyValues {
   var urlOpener: URLOpenerClient {
     get { self[URLOpenerClient.self] }
     set { self[URLOpenerClient.self] = newValue }
@@ -55,6 +55,7 @@ extension DependencyValues {
 
 private nonisolated let worktreeCreationProgressLineLimit = 200
 private nonisolated let worktreeCreationProgressUpdateStride = 20
+private nonisolated let randomWorktreeNameClaimAttempts = 5
 
 nonisolated struct WorktreeCreationProgressUpdateThrottle {
   private let stride: Int
@@ -106,6 +107,7 @@ struct RepositoriesFeature {
   @ObservableState
   struct State: Equatable {
     var repositories: IdentifiedArrayOf<Repository> = []
+    var licensePermits: [Worktree.ID: LicenseCreationPermit] = [:]
     var repositoryRoots: [URL] = []
     var loadFailuresByID: [Repository.ID: String] = [:]
     /// Set when git is environment-blocked (e.g. an unaccepted Xcode license):
@@ -126,6 +128,9 @@ struct RepositoriesFeature {
     /// cancelled, so its terminal always fires and must see the flag even if
     /// the repository was removed meanwhile.
     var cancelRequestedPendingIDs: Set<Worktree.ID> = []
+    /// Rows of cancelled creations whose `wt` may still land, keeping their names taken
+    /// until the terminal action so a same-name retry can't adopt the doomed worktree.
+    var cancelledPendingWorktrees: [Worktree.ID: PendingWorktree] = [:]
     /// Where a materialized pending id resolved to, so stale UI snapshots (an
     /// open context menu, the menu bar, a CLI-held id) keep working across the
     /// pending → real swap.
@@ -347,12 +352,12 @@ struct RepositoriesFeature {
     var trigger: WorktreeInfoWatcherClient.RefreshTrigger
   }
 
-  enum WorktreeCreationNameSource: Equatable {
+  nonisolated enum WorktreeCreationNameSource: Equatable, Sendable {
     case random
     case explicit(String)
   }
 
-  enum WorktreeCreationBaseRefSource: Equatable {
+  nonisolated enum WorktreeCreationBaseRefSource: Equatable, Sendable {
     case repositorySetting
     case explicit(String?)
   }
@@ -452,8 +457,11 @@ struct RepositoriesFeature {
       placement: WorktreePlacementOverride? = nil,
       pendingID: Worktree.ID? = nil,
       background: Bool = false,
-      pin: Bool = false
+      pin: Bool = false,
+      licensePermit: LicenseCreationPermit? = nil
     )
+    case worktreeCreationRejected(pendingID: Worktree.ID?, message: String, licenseRequired: Bool)
+    case remoteWorktreeCreationCompleted(pendingID: Worktree.ID, worktreeID: Worktree.ID)
     case promptedWorktreeCreationDataLoaded(
       repositoryID: Repository.ID,
       automaticBaseRef: String,
@@ -486,16 +494,17 @@ struct RepositoriesFeature {
     case createRandomWorktreeSucceeded(
       Worktree,
       repositoryID: Repository.ID,
-      pendingID: Worktree.ID
+      pendingID: Worktree.ID,
+      ownership: WorktreeCreationOwnership
     )
+    /// `cleanupTarget` is set only once the pre-flight cleared the target; it is reaped only if git registered it.
     case createRandomWorktreeFailed(
       title: String,
       message: String,
       pendingID: Worktree.ID,
       previousSelection: Worktree.ID?,
       repositoryID: Repository.ID,
-      name: String?,
-      baseDirectory: URL
+      cleanupTarget: WorktreeCreationCleanupTarget?
     )
     /// A worktree's creation flow settled: its first tab is hosted, or the
     /// initial-tab bootstrap failed and it rests tab-less (a valid empty state).
@@ -678,6 +687,8 @@ struct RepositoriesFeature {
     case openRepositorySettings(Repository.ID)
     case openWorktreeInApp(Worktree.ID, OpenWorktreeAction)
     case worktreeCreated(Worktree)
+    case licenseRequired
+    case licenseSnapshotUpdated(LicenseSnapshot)
     case runBlockingScript(
       Worktree, repositoryID: Repository.ID, kind: BlockingScriptKind, script: String,
       focusing: Bool = true
@@ -686,6 +697,7 @@ struct RepositoriesFeature {
   }
 
   @Dependency(AnalyticsClient.self) private var analyticsClient
+  @Dependency(LicenseClient.self) private var licenseClient
   @Dependency(GitClientDependency.self) private var gitClient
   @Dependency(ForgeRegistry.self) private var forgeRegistry
   @Dependency(GithubIntegrationClient.self) private var githubIntegration
@@ -806,9 +818,10 @@ struct RepositoriesFeature {
           return .send(.archiveWorktreeConfirmed(worktree.id, repository.id))
         }
         @Shared(.settingsFile) var settingsFile
-        let archivedDisplay =
-          AppShortcuts.archivedWorktrees
-          .effective(from: settingsFile.global.shortcutOverrides)?.display ?? "none"
+        let archivedLocation = AppShortcut.helpText(
+          "Menu Bar > Worktrees > Archived Worktrees",
+          shortcut: AppShortcuts.archivedWorktrees.effective(from: settingsFile.global.shortcutOverrides)
+        )
         let alertWorktreeName =
           SidebarDisplayName.resolved(
             custom: state.sidebarItems[id: worktree.id]?.customTitle,
@@ -825,7 +838,7 @@ struct RepositoriesFeature {
           }
         } message: {
           TextState(
-            "You can find \(alertWorktreeName) later in Menu Bar > Worktrees > Archived Worktrees (\(archivedDisplay))."
+            "You can find \(alertWorktreeName) later in \(archivedLocation)."
           )
         }
         return .none
@@ -860,9 +873,10 @@ struct RepositoriesFeature {
         }
         let count = validTargets.count
         @Shared(.settingsFile) var settingsFile
-        let archivedDisplay =
-          AppShortcuts.archivedWorktrees
-          .effective(from: settingsFile.global.shortcutOverrides)?.display ?? "none"
+        let archivedLocation = AppShortcut.helpText(
+          "Menu Bar > Worktrees > Archived Worktrees",
+          shortcut: AppShortcuts.archivedWorktrees.effective(from: settingsFile.global.shortcutOverrides)
+        )
         state.alert = AlertState {
           TextState("Archive \(count) worktrees?")
         } actions: {
@@ -874,7 +888,7 @@ struct RepositoriesFeature {
           }
         } message: {
           TextState(
-            "You can find them later in Menu Bar > Worktrees > Archived Worktrees (\(archivedDisplay))."
+            "You can find them later in \(archivedLocation)."
           )
         }
         return .none
@@ -995,11 +1009,8 @@ struct RepositoriesFeature {
         }
 
       case .archiveWorktreeApply(let worktreeID, let repositoryID):
-        // Deliver the commit from a Task so the teardown never runs on a
-        // synchronous UI send: the departing surface's isolated deinit, freed
-        // inside the still-live TCA task-local scope during the commit's
-        // `withAnimation` flush, aborts with an invalid free (issue #784). Keep
-        // this a pure forward; mutating here re-arms the crash.
+        // Deliver the commit from a Task so the teardown stays off the
+        // synchronous UI send (#784); keep this a pure forward.
         return .run { send in await send(.archiveWorktreeCommit(worktreeID, repositoryID)) }
 
       case .archiveWorktreeCommit(let worktreeID, let repositoryID):
@@ -1925,8 +1936,37 @@ struct RepositoriesFeature {
         let placement,
         let providedPendingID,
         let background,
-        let pin
+        let pin,
+        let permit
       ):
+        if licenseClient.isEnforced, permit == nil,
+          let repository = state.repositories[id: repositoryID], repository.isGitRepository,
+          repository.host == nil,
+          state.removingRepositoryIDs[repositoryID] == nil
+        {
+          let resource: String? =
+            if case .explicit(let name) = nameSource {
+              "\(repositoryID.rawValue):\(name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+            } else { nil }
+          return .run { send in
+            do {
+              let permit = try await licenseClient.authorizeCreation(resource)
+              await send(
+                .createWorktreeInRepository(
+                  repositoryID: repositoryID, nameSource: nameSource, baseRefSource: baseRefSource,
+                  upstream: upstream, fetchOrigin: fetchOrigin, placement: placement,
+                  pendingID: providedPendingID, background: background, pin: pin,
+                  licensePermit: permit
+                ))
+            } catch {
+              await send(
+                .worktreeCreationRejected(
+                  pendingID: providedPendingID, message: error.localizedDescription,
+                  licenseRequired: error as? LicenseError == .licenseRequired
+                ))
+            }
+          }
+        }
         // Pull the parked branch name so every rejection arm can drain its (repo, branch) entry
         // through the same helper — keeps the dict from leaking when a creation is rejected via
         // any of the three guards below.
@@ -1939,7 +1979,9 @@ struct RepositoriesFeature {
           if let rejectedBranchName {
             state.dropPendingCustomization(repositoryID: repositoryID, branchName: rejectedBranchName)
           }
-          return .none
+          return rejectWorktreeCreation(
+            permit, pendingID: providedPendingID,
+            message: "Unable to resolve a repository for the new worktree.")
         }
         // Guard against folder-kind entries arriving here via deeplink / palette paths that bypass
         // `.createRandomWorktreeInRepository`.
@@ -1951,7 +1993,23 @@ struct RepositoriesFeature {
           if let rejectedBranchName {
             state.dropPendingCustomization(repositoryID: repository.id, branchName: rejectedBranchName)
           }
-          return .none
+          return rejectWorktreeCreation(
+            permit, pendingID: providedPendingID,
+            message: "Worktrees are only supported for git repositories.")
+        }
+        if state.removingRepositoryIDs[repository.id] != nil {
+          state.alert = messageAlert(
+            title: "Unable to create worktree",
+            message: "This repository is being removed."
+          )
+          // Creation is being rejected; drop just the in-flight (repo, branch) entry so other
+          // concurrent customizations for this repo aren't wiped out.
+          if let rejectedBranchName {
+            state.dropPendingCustomization(
+              repositoryID: repository.id, branchName: rejectedBranchName)
+          }
+          return rejectWorktreeCreation(
+            permit, pendingID: providedPendingID, message: "This repository is being removed.")
         }
         // Remote repos create worktrees over ssh via `git worktree add`, then
         // reload to re-list. This bypasses the local pending/stream flow below
@@ -1969,25 +2027,16 @@ struct RepositoriesFeature {
             baseRefSource: baseRefSource,
             upstream: upstream,
             fetchOrigin: fetchOrigin,
-            placement: placement
+            placement: placement,
+            pendingID: providedPendingID ?? WorktreeID("\(WorktreeID.pendingPrefix)\(uuid().uuidString)")
           )
-        }
-        if state.removingRepositoryIDs[repository.id] != nil {
-          state.alert = messageAlert(
-            title: "Unable to create worktree",
-            message: "This repository is being removed."
-          )
-          // Creation is being rejected; drop just the in-flight (repo, branch) entry so other
-          // concurrent customizations for this repo aren't wiped out.
-          if let rejectedBranchName {
-            state.dropPendingCustomization(repositoryID: repository.id, branchName: rejectedBranchName)
-          }
-          return .none
         }
         let previousSelection = state.selectedWorktreeID
         // Honor a deeplink-supplied pending id so a CLI completion ack can
         // correlate this exact creation through to its success / failure.
-        let pendingID = providedPendingID ?? WorktreeID("\(WorktreeID.pendingPrefix)\(uuid().uuidString)")
+        let pendingID =
+          providedPendingID ?? WorktreeID("\(WorktreeID.pendingPrefix)\(uuid().uuidString)")
+        if let permit { state.licensePermits[pendingID] = permit }
         @Shared(.settingsFile) var settingsFile
         @Shared(.repositorySettings(repository.rootURL, host: repository.host)) var repositorySettings
         let globalDefaultWorktreeBaseDirectoryPath = settingsFile.global.defaultWorktreeBaseDirectoryPath
@@ -2029,11 +2078,22 @@ struct RepositoriesFeature {
         if !background {
           state.setSingleWorktreeSelection(pendingID)
         }
-        let existingNames = Set(repository.worktrees.map { $0.name.lowercased() })
+        var pendingNames: Set<String> = []
+        // A sibling creation's branch may not exist yet, but `wt` would hand its worktree back to us.
+        for pending in state.pendingWorktrees + state.cancelledPendingWorktrees.values
+        where pending.repositoryID == repository.id && pending.id != pendingID {
+          guard let pendingName = pending.progress.worktreeName else { continue }
+          pendingNames.insert(pendingName.lowercased())
+        }
+        let inFlightNames = pendingNames
+        let worktreeNames = Set(repository.worktrees.map { $0.name.lowercased() })
+        let knownWorktrees = Array(repository.worktrees)
+        let worktreeTargetState = gitClient.worktreeTargetState
+        let listWorktrees = gitClient.registeredWorktrees
         let createWorktreeStream = gitClient.createWorktreeStream
         let isValidBranchName = gitClient.isValidBranchName
         return .run { send in
-          var newWorktreeName: String?
+          var cleanupTarget: WorktreeCreationCleanupTarget?
           var progress = WorktreeCreationProgress(
             stage: .loadingLocalBranches,
             worktreeName: initialWorktreeName
@@ -2049,8 +2109,11 @@ struct RepositoriesFeature {
               )
             )
             let branchNames = try await gitClient.localBranchNames(repository.rootURL)
-            let existing = existingNames.union(branchNames)
-            let name: String
+            let takenNames = WorktreeCreationPreflight.TakenNames(
+              branches: branchNames.union(inFlightNames), worktrees: worktreeNames)
+            let excludedRandomNames = takenNames.branches.union(takenNames.worktrees)
+              .union(WorktreeCreationPreflight.namespaces(of: branchNames))
+            var name: String
             switch nameSource {
             case .random:
               progress.stage = .choosingWorktreeName
@@ -2061,7 +2124,7 @@ struct RepositoriesFeature {
                 )
               )
               let generatedName = await MainActor.run {
-                WorktreeNameGenerator.nextName(excluding: existing)
+                WorktreeNameGenerator.nextName(excluding: excludedRandomNames)
               }
               guard let generatedName else {
                 let message =
@@ -2074,8 +2137,7 @@ struct RepositoriesFeature {
                     pendingID: pendingID,
                     previousSelection: previousSelection,
                     repositoryID: repository.id,
-                    name: nil,
-                    baseDirectory: worktreeBaseDirectory
+                    cleanupTarget: nil
                   )
                 )
                 return
@@ -2091,8 +2153,7 @@ struct RepositoriesFeature {
                     pendingID: pendingID,
                     previousSelection: previousSelection,
                     repositoryID: repository.id,
-                    name: nil,
-                    baseDirectory: worktreeBaseDirectory
+                    cleanupTarget: nil
                   )
                 )
                 return
@@ -2105,8 +2166,7 @@ struct RepositoriesFeature {
                     pendingID: pendingID,
                     previousSelection: previousSelection,
                     repositoryID: repository.id,
-                    name: nil,
-                    baseDirectory: worktreeBaseDirectory
+                    cleanupTarget: nil
                   )
                 )
                 return
@@ -2119,29 +2179,13 @@ struct RepositoriesFeature {
                     pendingID: pendingID,
                     previousSelection: previousSelection,
                     repositoryID: repository.id,
-                    name: nil,
-                    baseDirectory: worktreeBaseDirectory
-                  )
-                )
-                return
-              }
-              guard !existing.contains(trimmed.lowercased()) else {
-                await send(
-                  .createRandomWorktreeFailed(
-                    title: "Branch name already exists",
-                    message: "Choose a different branch name and try again.",
-                    pendingID: pendingID,
-                    previousSelection: previousSelection,
-                    repositoryID: repository.id,
-                    name: nil,
-                    baseDirectory: worktreeBaseDirectory
+                    cleanupTarget: nil
                   )
                 )
                 return
               }
               name = trimmed
             }
-            newWorktreeName = name
             // Validate the name leaf here too: the prompt guards it, but the
             // CLI / deeplink entry points reach this path without that check.
             if let nameError = WorktreePlacementOverride.nameValidationError(placement?.name) {
@@ -2152,10 +2196,64 @@ struct RepositoriesFeature {
                   pendingID: pendingID,
                   previousSelection: previousSelection,
                   repositoryID: repository.id,
-                  name: nil,
-                  baseDirectory: worktreeBaseDirectory
+                  cleanupTarget: nil
                 )
               )
+              return
+            }
+            // The folder `wt` will create, which a failure may only reap if git registered it.
+            func targetDirectory(for branch: String) -> URL {
+              SupacodePaths.previewWorktreeDirectory(
+                defaultBaseDirectory: worktreeBaseDirectory,
+                repositoryRootURL: repository.rootURL,
+                nameOverride: placement?.name,
+                pathOverride: placement?.path,
+                branchName: branch
+              )
+            }
+            func claimTarget(
+              for branch: String,
+              takenNames: WorktreeCreationPreflight.TakenNames,
+              worktrees: [Worktree]
+            ) async -> Result<WorktreeCreationCleanupTarget, WorktreeCreationPreflight.Rejection> {
+              let directory = targetDirectory(for: branch)
+              return WorktreeCreationPreflight.claim(
+                branchName: branch,
+                targetDirectory: directory,
+                targetState: await worktreeTargetState(directory),
+                takenNames: takenNames,
+                worktrees: worktrees
+              )
+            }
+            func failPreflight(_ rejection: WorktreeCreationPreflight.Rejection) async {
+              await send(
+                .createRandomWorktreeFailed(
+                  title: rejection.title,
+                  message: rejection.message,
+                  pendingID: pendingID,
+                  previousSelection: previousSelection,
+                  repositoryID: repository.id,
+                  cleanupTarget: nil
+                )
+              )
+            }
+            var claim = await claimTarget(for: name, takenNames: takenNames, worktrees: knownWorktrees)
+            // A random name that lands on a leftover folder just picks another one.
+            let leafFollowsBranch = (placement?.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if case .random = nameSource, leafFollowsBranch {
+              var rejectedNames: Set<String> = []
+              for _ in 0..<randomWorktreeNameClaimAttempts {
+                guard case .failure(.folderOccupied) = claim else { break }
+                rejectedNames.insert(name.lowercased())
+                let excluded = excludedRandomNames.union(rejectedNames)
+                guard let retryName = await MainActor.run(body: { WorktreeNameGenerator.nextName(excluding: excluded) })
+                else { break }
+                name = retryName
+                claim = await claimTarget(for: name, takenNames: takenNames, worktrees: knownWorktrees)
+              }
+            }
+            if case .failure(let rejection) = claim {
+              await failPreflight(rejection)
               return
             }
             let worktreeDirectoryURL = SupacodePaths.resolvedWorktreeDirectory(
@@ -2165,6 +2263,10 @@ struct RepositoriesFeature {
               pathOverride: placement?.path,
               branchName: name
             )
+            if let permit {
+              try await licenseClient.claimCreationResource(
+                permit, "\(repository.id.rawValue):\(name.lowercased())", targetDirectory(for: name))
+            }
             progress.worktreeName = name
             progress.stage = .checkingRepositoryMode
             await send(
@@ -2241,7 +2343,7 @@ struct RepositoriesFeature {
               }
             }
             // A dead or unverifiable upstream fails here, before `git worktree
-            // add` creates anything; `name: nil` skips the created-worktree cleanup.
+            // add` creates anything, so there is no cleanup target yet.
             if case .branch(let upstreamRef) = upstream {
               func failCreation(title: String, message: String) async {
                 await send(
@@ -2251,8 +2353,7 @@ struct RepositoriesFeature {
                     pendingID: pendingID,
                     previousSelection: previousSelection,
                     repositoryID: repository.id,
-                    name: nil,
-                    baseDirectory: worktreeBaseDirectory
+                    cleanupTarget: nil
                   )
                 )
               }
@@ -2344,6 +2445,30 @@ struct RepositoriesFeature {
                 progress: progress
               )
             )
+            // Re-check right before `wt`: fetch and supaignore leave time for a sibling to claim the name.
+            let currentBranchNames = try await gitClient.localBranchNames(repository.rootURL)
+            let currentWorktrees: [Worktree]
+            do {
+              currentWorktrees = try await listWorktrees(repository.rootURL)
+            } catch {
+              repositoriesLogger.warning(
+                "Re-check nesting uses a stale worktree list for \(repository.name): \(error.localizedDescription)")
+              currentWorktrees = knownWorktrees
+            }
+            let recheck = await claimTarget(
+              for: name,
+              takenNames: WorktreeCreationPreflight.TakenNames(
+                branches: currentBranchNames.union(inFlightNames), worktrees: worktreeNames),
+              worktrees: currentWorktrees)
+            switch recheck {
+            case .failure(let rejection):
+              await failPreflight(rejection)
+              return
+            case .success(var target):
+              let baseRevision = resolvedBaseRef.isEmpty ? "HEAD" : resolvedBaseRef
+              target.baseCommit = await gitClient.resolveCommit(baseRevision, repository.rootURL)
+              cleanupTarget = target
+            }
             let stream = createWorktreeStream(
               name,
               repository.rootURL,
@@ -2356,6 +2481,9 @@ struct RepositoriesFeature {
             for try await event in stream {
               switch event {
               case .outputLine(let outputLine):
+                if outputLine.source == .stderr, cleanupTarget?.isWorktreeAddAnnouncement(outputLine.text) == true {
+                  cleanupTarget?.startedWorktreeAdd = true
+                }
                 let line = outputLine.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !line.isEmpty else {
                   continue
@@ -2412,11 +2540,21 @@ struct RepositoriesFeature {
                     )
                   )
                 }
+                // `wt` hands back an existing worktree without running `git worktree add`.
+                let ownership: WorktreeCreationOwnership =
+                  if let cleanupTarget, cleanupTarget.startedWorktreeAdd,
+                    WorktreeCreationPreflight.isSameDirectory(newWorktree.workingDirectory, cleanupTarget.directory)
+                  {
+                    .created(cleanupTarget)
+                  } else {
+                    .adopted
+                  }
                 await send(
                   .createRandomWorktreeSucceeded(
                     newWorktree,
                     repositoryID: repository.id,
-                    pendingID: pendingID
+                    pendingID: pendingID,
+                    ownership: ownership
                   )
                 )
                 // Coalesce copy + upstream advisories into one alert; a second
@@ -2461,14 +2599,49 @@ struct RepositoriesFeature {
                 pendingID: pendingID,
                 previousSelection: previousSelection,
                 repositoryID: repository.id,
-                name: newWorktreeName,
-                baseDirectory: worktreeBaseDirectory
+                cleanupTarget: cleanupTarget
               )
             )
           }
         }
+      case .worktreeCreationRejected(_, let message, let licenseRequired):
+        if licenseRequired {
+          analyticsClient.capture("license_required", nil)
+          return .send(.delegate(.licenseRequired))
+        }
+        state.alert = messageAlert(title: "Unable to create worktree", message: message)
+        return .none
+      case .remoteWorktreeCreationCompleted:
+        return .none
       default:
         return .none
+      }
+    }
+  }
+
+  private func rejectWorktreeCreation(
+    _ permit: LicenseCreationPermit?, pendingID: Worktree.ID?, message: String
+  ) -> Effect<Action> {
+    .run { send in
+      if let permit { await licenseClient.cancelCreation(permit) }
+      await send(
+        .worktreeCreationRejected(pendingID: pendingID, message: message, licenseRequired: false))
+    }
+  }
+
+  private func cancelLicensePermit(_ permit: LicenseCreationPermit?) -> Effect<Action> {
+    guard let permit else { return .none }
+    return .run { _ in await licenseClient.cancelCreation(permit) }
+  }
+
+  private func completeLicensePermit(_ permit: LicenseCreationPermit?) -> Effect<Action> {
+    guard let permit else { return .none }
+    return .run { send in
+      do {
+        let snapshot = try await licenseClient.completeCreation(permit)
+        await send(.delegate(.licenseSnapshotUpdated(snapshot)))
+      } catch {
+        await send(.presentAlert(title: "License data could not be saved", message: error.localizedDescription))
       }
     }
   }
@@ -4524,7 +4697,8 @@ struct RepositoriesFeature {
           )
         )
 
-      case .createWorktreeInRepository:
+      case .createWorktreeInRepository, .worktreeCreationRejected,
+        .remoteWorktreeCreationCompleted:
         // Real handling lives in `worktreeCreateInRepoReducer` (combined below) to keep
         // `body` under the type-checker's complexity limit.
         return .none
@@ -4553,6 +4727,8 @@ struct RepositoriesFeature {
         return .none
 
       case .pendingWorktreeProgressUpdated(let id, let progress):
+        // A cancelled random creation picks its name later; keep that name reserved too.
+        state.cancelledPendingWorktrees[id]?.progress = progress
         guard state.updatePendingWorktreeProgress(id, progress: progress) else { return .none }
         Self.syncSidebar(&state)
         return .none
@@ -4563,11 +4739,21 @@ struct RepositoriesFeature {
       case .createRandomWorktreeSucceeded(
         let worktree,
         let repositoryID,
-        let pendingID
+        let pendingID,
+        let ownership
       ):
+        let permit = state.licensePermits.removeValue(forKey: pendingID)
+        state.cancelledPendingWorktrees.removeValue(forKey: pendingID)
         if state.cancelRequestedPendingIDs.remove(pendingID) != nil {
-          return deleteCancelledCreation(worktree)
+          switch ownership {
+          case .adopted:
+            // An adopted worktree predates this creation, so the cancel only drops the result.
+            return cancelLicensePermit(permit)
+          case .created(let target):
+            return deleteCancelledCreation(worktree, target: target, permit: permit)
+          }
         }
+        let licenseEffect = completeLicensePermit(permit)
         analyticsClient.capture("worktree_created", nil)
         // Capture the pending row's cargo (customization, pin intent, background
         // opt-out) BEFORE the pending drops so the bucketed Item reflects it from
@@ -4620,6 +4806,7 @@ struct RepositoriesFeature {
         // between the real-worktree swap and the setup-script path.
         state.sidebarItems[id: worktree.id]?.lifecycle = .pending
         return .merge(
+          licenseEffect,
           carriedBackground
             ? .none
             : .send(.sidebarItems(.element(id: worktree.id, action: .focusTerminalRequested))),
@@ -4635,24 +4822,20 @@ struct RepositoriesFeature {
         let pendingID,
         let previousSelection,
         let repositoryID,
-        let name,
-        let baseDirectory
+        let cleanupTarget
       ):
+        let permit = state.licensePermits.removeValue(forKey: pendingID)
         let previousSelectedWorktree = state.worktree(for: previousSelection)
         // A cancelled creation failing is the expected outcome, not an error
         // worth alerting; the cleanup below still runs.
         let wasCancelled = state.cancelRequestedPendingIDs.remove(pendingID) != nil
+        state.cancelledPendingWorktrees.removeValue(forKey: pendingID)
         state.removePendingWorktree(pendingID)
         // A roster reload can have resolved this pending just before the
-        // failure; the cleanup below deletes the directory, so the mapping
-        // must not retarget onto the doomed worktree.
+        // failure; never retarget onto a worktree the cleanup may reap.
         state.resolvedPendingWorktrees.removeValue(forKey: pendingID)
         state.restoreSelection(previousSelection, pendingID: pendingID)
-        let cleanup = state.cleanupFailedWorktree(
-          repositoryID: repositoryID,
-          name: name,
-          baseDirectory: baseDirectory,
-        )
+        let cleanup = state.cleanupFailedWorktree(repositoryID: repositoryID, target: cleanupTarget)
         if !wasCancelled {
           state.alert = messageAlert(title: title, message: message)
         }
@@ -4673,21 +4856,17 @@ struct RepositoriesFeature {
         // Sidebar-state mutations in `cleanupWorktreeState` already
         // went through `$sidebar.withLock`, so no per-slice save
         // effects are needed here.
-        if let cleanupWorktree = cleanup.worktree {
-          if wasCancelled {
-            // A cancelled creation must not fail silently (its alert was
-            // suppressed above); the verified reap surfaces a surviving
-            // directory instead of quietly re-adopting it.
-            effects.append(deleteCancelledCreation(cleanupWorktree))
-          } else {
-            let cleanupClient = gitClient(for: cleanupWorktree)
-            effects.append(
-              .run { send in
-                _ = try? await cleanupClient.removeWorktree(cleanupWorktree, true)
-                await send(.reloadRepositories(animated: true))
-              }
+        if let cleanupTarget, let reapCandidate = cleanup.reapCandidate {
+          effects.append(
+            reapFailedCreation(
+              reapCandidate,
+              target: cleanupTarget,
+              permit: permit,
+              failureMessage: wasCancelled ? nil : message
             )
-          }
+          )
+        } else {
+          effects.append(cancelLicensePermit(permit))
         }
         return .merge(effects)
 
@@ -5388,35 +5567,180 @@ struct RepositoriesFeature {
 
   /// Cancelled mid-flight but the add ran to completion: delete the
   /// materialized worktree (branch included) instead of adopting it.
-  private func deleteCancelledCreation(_ worktree: Worktree) -> Effect<Action> {
-    let cleanupClient = gitClient(for: worktree)
-    return .run { send in
-      do {
-        _ = try await cleanupClient.removeWorktree(worktree, true)
-      } catch {
-        await send(
-          .presentAlert(
-            title: "Unable to clean up cancelled worktree",
-            message: error.localizedDescription
-          )
-        )
-      }
-      // `removeWorktree` swallows most git failures internally; verify the
-      // directory is gone so a failed cleanup surfaces instead of being
-      // silently re-adopted by the reload below. Cancellable creations are
-      // local-only, so the filesystem check is authoritative.
-      let path = worktree.workingDirectory.path(percentEncoded: false)
-      if FileManager.default.fileExists(atPath: path) {
-        repositoriesLogger.error("Cancelled worktree \(worktree.name) survived cleanup at \(path).")
-        await send(
-          .presentAlert(
-            title: "Unable to clean up cancelled worktree",
-            message: "\(worktree.name) could not be removed and will reappear in the sidebar. Delete it manually."
-          )
-        )
-      }
-      await send(.reloadRepositories(animated: false))
+  private func deleteCancelledCreation(
+    _ worktree: Worktree,
+    target: WorktreeCreationCleanupTarget,
+    permit: LicenseCreationPermit?
+  ) -> Effect<Action> {
+    .run { send in
+      let problems = await removeCreatedWorktree(worktree, permit: permit, send: send)
+      await Self.finishCreationCleanup(of: target, problems: problems, failureMessage: nil, send: send)
     }
+  }
+
+  /// A failed creation reaps only what git registered as this branch at this directory;
+  /// anything else is left alone. Every problem lands in one alert with the creation error.
+  private func reapFailedCreation(
+    _ worktree: Worktree,
+    target: WorktreeCreationCleanupTarget,
+    permit: LicenseCreationPermit?,
+    failureMessage: String?
+  ) -> Effect<Action> {
+    .run { send in
+      let problems = await reapLeftovers(of: worktree, target: target, permit: permit, send: send)
+      await Self.finishCreationCleanup(of: target, problems: problems, failureMessage: failureMessage, send: send)
+    }
+  }
+
+  /// Shared tail of every creation cleanup: restore the user's folder, one alert, one reload.
+  private static func finishCreationCleanup(
+    of target: WorktreeCreationCleanupTarget,
+    problems: [String],
+    failureMessage: String?,
+    send: Send<Action>
+  ) async {
+    restorePreexistingFolder(of: target)
+    if !problems.isEmpty {
+      let alert = creationCleanupAlert(failureMessage: failureMessage, problems: problems)
+      await send(.presentAlert(title: alert.title, message: alert.message))
+    }
+    await send(.reloadRepositories(animated: false))
+  }
+
+  private func reapLeftovers(
+    of worktree: Worktree,
+    target: WorktreeCreationCleanupTarget,
+    permit: LicenseCreationPermit?,
+    send: Send<Action>
+  ) async -> [String] {
+    let path = target.directory.path(percentEncoded: false)
+    guard target.startedWorktreeAdd else {
+      repositoriesLogger.info(
+        "Failed creation of \(target.branchName) never reached git worktree add; nothing to reap.")
+      if let permit { await licenseClient.cancelCreation(permit) }
+      return []
+    }
+    let client = gitClient(for: worktree)
+    let registered: [Worktree]
+    do {
+      registered = try await client.worktrees(worktree.repositoryRootURL)
+    } catch {
+      repositoriesLogger.error(
+        "Couldn't verify failed creation of \(target.branchName) at \(path): \(error.localizedDescription)")
+      var problems = [
+        "Supacode couldn't check what was left at \(path) or on branch '\(target.branchName)'. "
+          + "Remove them manually if they appear."
+      ]
+      if let permit, let problem = await settleCreationPermit(permit, directory: target.directory, send: send) {
+        problems.append(problem)
+      }
+      return problems
+    }
+    let isOwned = registered.contains {
+      $0.name == target.branchName && WorktreeCreationPreflight.isSameDirectory($0.workingDirectory, target.directory)
+    }
+    guard isOwned else {
+      repositoriesLogger.info("Failed creation of \(target.branchName) registered nothing at \(path); left untouched.")
+      let problems = await deleteStrayBranch(
+        of: target, registered: registered, client: client, root: worktree.repositoryRootURL)
+      if let permit { await licenseClient.cancelCreation(permit) }
+      return problems
+    }
+    return await removeCreatedWorktree(worktree, permit: permit, send: send)
+  }
+
+  /// `git worktree add -b` keeps the new branch when checkout fails. Delete it only while it still
+  /// points at the base commit, so a branch someone else created or advanced never loses work.
+  private func deleteStrayBranch(
+    of target: WorktreeCreationCleanupTarget,
+    registered: [Worktree],
+    client: GitClientDependency,
+    root: URL
+  ) async -> [String] {
+    guard let baseCommit = target.baseCommit else { return [] }
+    let branchName = target.branchName
+    if let checkout = registered.first(where: { $0.name.lowercased() == branchName.lowercased() }) {
+      let checkoutPath = checkout.workingDirectory.path(percentEncoded: false)
+      repositoriesLogger.info("Branch \(branchName) is checked out at \(checkoutPath); left untouched.")
+      return []
+    }
+    guard let tip = await client.resolveCommit("refs/heads/\(branchName)", root) else { return [] }
+    guard tip == baseCommit else {
+      repositoriesLogger.info("Branch \(branchName) moved past the base commit; left untouched.")
+      return []
+    }
+    do {
+      try await client.deleteBranch(branchName, baseCommit, root)
+      return []
+    } catch {
+      repositoriesLogger.error("Couldn't delete stray branch \(branchName): \(error.localizedDescription)")
+      return ["Branch '\(branchName)' was left behind. Delete it before trying the same name again."]
+    }
+  }
+
+  /// Puts back the empty folder the user had at the target before the attempt.
+  nonisolated static func restorePreexistingFolder(of target: WorktreeCreationCleanupTarget) {
+    guard target.directoryPreexisted, GitClient.targetState(at: target.directory) == .absent else { return }
+    do {
+      try FileManager.default.createDirectory(at: target.directory, withIntermediateDirectories: false)
+    } catch {
+      let path = target.directory.path(percentEncoded: false)
+      repositoriesLogger.warning("Couldn't restore the empty folder at \(path): \(error.localizedDescription)")
+    }
+  }
+
+  /// Folds cleanup problems into the creation error so they don't replace it.
+  nonisolated static func creationCleanupAlert(
+    failureMessage: String?,
+    problems: [String]
+  ) -> (title: String, message: String) {
+    let details = problems.joined(separator: "\n\n")
+    guard let failureMessage else { return ("Unable to clean up cancelled worktree", details) }
+    return ("Unable to create worktree", "\(failureMessage)\n\n\(details)")
+  }
+
+  /// Completes the permit when the worktree materialized, else releases it. Returns a save problem.
+  private func settleCreationPermit(
+    _ permit: LicenseCreationPermit,
+    directory: URL,
+    send: Send<Action>
+  ) async -> String? {
+    let gitPath = directory.appending(path: ".git").path(percentEncoded: false)
+    guard FileManager.default.fileExists(atPath: gitPath) else {
+      await licenseClient.cancelCreation(permit)
+      return nil
+    }
+    do {
+      let snapshot = try await licenseClient.completeCreation(permit)
+      await send(.delegate(.licenseSnapshotUpdated(snapshot)))
+      return nil
+    } catch {
+      return "License data could not be saved: \(error.localizedDescription)"
+    }
+  }
+
+  /// Removes a worktree this creation made and settles its permit, returning any problems.
+  private func removeCreatedWorktree(
+    _ worktree: Worktree,
+    permit: LicenseCreationPermit?,
+    send: Send<Action>
+  ) async -> [String] {
+    var problems: [String] = []
+    do {
+      _ = try await gitClient(for: worktree).removeWorktree(worktree, true)
+    } catch {
+      problems.append(error.localizedDescription)
+    }
+    // `removeWorktree` swallows most git failures; the filesystem is authoritative for local creations.
+    let path = worktree.workingDirectory.path(percentEncoded: false)
+    if FileManager.default.fileExists(atPath: path) {
+      repositoriesLogger.error("Worktree \(worktree.name) survived cleanup at \(path).")
+      problems.append("\(worktree.name) could not be removed and will reappear in the sidebar. Delete it manually.")
+    }
+    if let permit, let problem = await settleCreationPermit(permit, directory: worktree.workingDirectory, send: send) {
+      problems.append(problem)
+    }
+    return problems
   }
 
   /// Drops a still-creating row now and flags the id so the creation's
@@ -5441,6 +5765,7 @@ struct RepositoriesFeature {
     // The git work may be past the point of no return; flag the id so the
     // creation's terminal action cleans up instead of adopting the result.
     state.cancelRequestedPendingIDs.insert(worktreeID)
+    state.cancelledPendingWorktrees[worktreeID] = pending
     let previousSelection = state.selectedWorktreeID
     let previousSelectedWorktree = state.worktree(for: previousSelection)
     withAnimation(.easeOut(duration: 0.2)) {
@@ -6423,7 +6748,8 @@ extension RepositoriesFeature.State {
 
 struct FailedWorktreeCleanup {
   let didRemoveWorktree: Bool
-  let worktree: Worktree?
+  /// The worktree to reap once git confirms it registered this branch at this directory.
+  let reapCandidate: Worktree?
 }
 
 extension RepositoriesFeature.State {
@@ -6484,34 +6810,25 @@ extension RepositoriesFeature.State {
 
   mutating func cleanupFailedWorktree(
     repositoryID: Repository.ID,
-    name: String?,
-    baseDirectory: URL,
+    target: WorktreeCreationCleanupTarget?
   ) -> FailedWorktreeCleanup {
-    guard let name, !name.isEmpty else {
-      return FailedWorktreeCleanup(didRemoveWorktree: false, worktree: nil)
+    guard let target else {
+      return FailedWorktreeCleanup(didRemoveWorktree: false, reapCandidate: nil)
     }
     let repositoryRootURL = URL(fileURLWithPath: repositoryID.rawValue).standardizedFileURL
-    let normalizedBaseDirectory = baseDirectory.standardizedFileURL
-    let worktreeURL =
-      normalizedBaseDirectory
-      .appending(path: name, directoryHint: .isDirectory)
-      .standardizedFileURL
-    guard worktreeURL.isInside(baseDirectory: normalizedBaseDirectory) else {
-      return FailedWorktreeCleanup(didRemoveWorktree: false, worktree: nil)
+    let worktree = Worktree(
+      location: .local(workingDirectory: target.directory.standardizedFileURL, repositoryRoot: repositoryRootURL),
+      kind: .git,
+      name: target.branchName,
+      detail: "",
+      createdAt: nil
+    )
+    // Only a row a reload adopted for this very branch is the failed creation's to drop.
+    guard repositories[id: repositoryID]?.worktrees[id: worktree.id]?.name == target.branchName else {
+      return FailedWorktreeCleanup(didRemoveWorktree: false, reapCandidate: worktree)
     }
-    let worktreeID = WorktreeID(worktreeURL.path(percentEncoded: false))
-    let worktree =
-      repositories[id: repositoryID]?.worktrees[id: worktreeID]
-      ?? Worktree(
-        id: worktreeID,
-        kind: .git,
-        name: name,
-        detail: "",
-        workingDirectory: worktreeURL,
-        repositoryRootURL: repositoryRootURL,
-      )
-    let didRemoveWorktree = cleanupWorktreeState(worktreeID, repositoryID: repositoryID)
-    return FailedWorktreeCleanup(didRemoveWorktree: didRemoveWorktree, worktree: worktree)
+    let didRemoveWorktree = cleanupWorktreeState(worktree.id, repositoryID: repositoryID)
+    return FailedWorktreeCleanup(didRemoveWorktree: didRemoveWorktree, reapCandidate: worktree)
   }
 
   @discardableResult
@@ -6537,15 +6854,6 @@ extension RepositoriesFeature.State {
     guard let lifecycle = sidebarItems[id: worktreeID]?.lifecycle else { return .none }
     guard lifecycle == .deleting || lifecycle == .deletingScript else { return .none }
     return .send(.sidebarItems(.element(id: worktreeID, action: .lifecycleChanged(.idle))))
-  }
-}
-
-extension URL {
-  fileprivate func isInside(baseDirectory: URL) -> Bool {
-    let normalizedPath = standardizedFileURL.pathComponents
-    let normalizedBase = baseDirectory.standardizedFileURL.pathComponents
-    guard normalizedPath.count >= normalizedBase.count else { return false }
-    return Array(normalizedPath.prefix(normalizedBase.count)) == normalizedBase
   }
 }
 
@@ -7127,7 +7435,7 @@ extension RepositoriesFeature.State {
   }
 }
 
-extension SidebarState {
+nonisolated extension SidebarState {
   /// Preserve user-curated `.archived` / `.pinned` buckets and title / color
   /// customization for repositories no longer in `availableRepoIDs`. Tombstones
   /// are appended after live repos so the natural ordering stays "live first,

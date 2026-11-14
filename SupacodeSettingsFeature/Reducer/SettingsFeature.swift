@@ -70,6 +70,7 @@ public struct SettingsFeature {
     public var copyUntrackedOnWorktreeCreate: Bool
     public var pullRequestMergeStrategy: PullRequestMergeStrategy
     public var terminalThemeSyncEnabled: Bool
+    public var terminalBackgroundTransparencyEnabled: Bool?
     public var ghosttyUserConfigMode: GhosttyUserConfigMode
     public var automatedActionPolicy: AutomatedActionPolicy
     public var defaultWorktreeBaseDirectoryPath: String
@@ -120,6 +121,12 @@ public struct SettingsFeature {
     /// the fallback sound) can fire, so surface-mute has something to mute.
     public var hasActiveNotificationChannel: Bool {
       systemNotificationsEnabled || notificationSound != .never
+    }
+
+    /// Resolves the OS default until the user picks a value, which then sticks.
+    public var isTerminalBackgroundTransparent: Bool {
+      get { terminalBackgroundTransparencyEnabled ?? GlobalSettings.defaultTerminalBackgroundTransparency }
+      set { terminalBackgroundTransparencyEnabled = newValue }
     }
 
     /// Custom-folder targets present in state for an agent, ordered by path.
@@ -207,6 +214,7 @@ public struct SettingsFeature {
       copyUntrackedOnWorktreeCreate = settings.copyUntrackedOnWorktreeCreate
       pullRequestMergeStrategy = settings.pullRequestMergeStrategy
       terminalThemeSyncEnabled = settings.terminalThemeSyncEnabled
+      terminalBackgroundTransparencyEnabled = settings.terminalBackgroundTransparencyEnabled
       ghosttyUserConfigMode = settings.ghosttyUserConfigMode
       automatedActionPolicy = settings.automatedActionPolicy
       autoDeleteArchivedWorktreesAfterDays = settings.autoDeleteArchivedWorktreesAfterDays
@@ -274,6 +282,7 @@ public struct SettingsFeature {
     case repositorySettings(RepositorySettingsFeature.Action)
     case addGlobalScript
     case removeGlobalScript(ScriptDefinition.ID)
+    case licenseDeactivationRequested
     case alert(PresentationAction<Alert>)
     case delegate(Delegate)
     case binding(BindingAction<State>)
@@ -284,11 +293,13 @@ public struct SettingsFeature {
     case openSystemNotificationSettings
     case confirmAutoDeleteDaysChange(AutoDeletePeriod)
     case confirmRemoveGlobalScript(ScriptDefinition.ID)
+    case confirmLicenseDeactivation
   }
 
   @CasePathable
   public enum Delegate: Equatable {
     case settingsChanged(GlobalSettings)
+    case deactivateLicense
   }
 
   @Dependency(AnalyticsClient.self) private var analyticsClient
@@ -349,11 +360,10 @@ public struct SettingsFeature {
           await withTaskGroup(of: (AgentInstallTarget, Result<AgentIntegrationState, Error>).self) { group in
             for target in targets {
               group.addTask {
-                do {
-                  return (target, .success(try await agentIntegrationClient.state(target)))
-                } catch {
-                  return (target, .failure(error))
-                }
+                // Build the result first: inlining the throwing await into the
+                // returned tuple miscompiles under -O, zeroing `target`.
+                let probe = await Result { try await agentIntegrationClient.state(target) }
+                return (target, probe)
               }
             }
             for await (target, probe) in group {
@@ -397,6 +407,7 @@ public struct SettingsFeature {
         state.copyUntrackedOnWorktreeCreate = normalizedSettings.copyUntrackedOnWorktreeCreate
         state.pullRequestMergeStrategy = normalizedSettings.pullRequestMergeStrategy
         state.terminalThemeSyncEnabled = normalizedSettings.terminalThemeSyncEnabled
+        state.terminalBackgroundTransparencyEnabled = normalizedSettings.terminalBackgroundTransparencyEnabled
         state.ghosttyUserConfigMode = normalizedSettings.ghosttyUserConfigMode
         state.automatedActionPolicy = normalizedSettings.automatedActionPolicy
         state.autoDeleteArchivedWorktreesAfterDays = normalizedSettings.autoDeleteArchivedWorktreesAfterDays
@@ -916,6 +927,26 @@ public struct SettingsFeature {
         state.globalScripts.removeAll { $0.id == id }
         return persist(state)
 
+      case .licenseDeactivationRequested:
+        guard state.alert == nil else { return .none }
+        state.alert = AlertState {
+          TextState("Deactivate this Mac?")
+        } actions: {
+          ButtonState(role: .destructive, action: .confirmLicenseDeactivation) {
+            TextState("Deactivate")
+          }
+          ButtonState(role: .cancel, action: .dismiss) {
+            TextState("Cancel")
+          }
+        } message: {
+          TextState("You can activate your license again on this Mac or another one with your key.")
+        }
+        return .none
+
+      case .alert(.presented(.confirmLicenseDeactivation)):
+        state.alert = nil
+        return .send(.delegate(.deactivateLicense))
+
       case .repositoriesChanged(let repositories):
         state.repositorySummaries =
           repositories
@@ -1171,6 +1202,7 @@ extension SettingsFeature.State {
     settings.copyUntrackedOnWorktreeCreate = copyUntrackedOnWorktreeCreate
     settings.pullRequestMergeStrategy = pullRequestMergeStrategy
     settings.terminalThemeSyncEnabled = terminalThemeSyncEnabled
+    settings.terminalBackgroundTransparencyEnabled = terminalBackgroundTransparencyEnabled
     settings.ghosttyUserConfigMode = ghosttyUserConfigMode
     settings.automatedActionPolicy = automatedActionPolicy
     settings.defaultWorktreeBaseDirectoryPath =

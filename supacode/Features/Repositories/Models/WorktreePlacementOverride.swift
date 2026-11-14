@@ -5,12 +5,12 @@ import Foundation
 /// deeplink. `name` is the leaf folder name (default: the branch name); `path`
 /// is the parent directory (default: the resolved base directory). Both `nil`
 /// keeps `wt`'s default `base/<branch>` placement.
-struct WorktreePlacementOverride: Equatable {
+nonisolated struct WorktreePlacementOverride: Equatable {
   var name: String?
   var path: String?
 }
 
-extension WorktreePlacementOverride {
+nonisolated extension WorktreePlacementOverride {
   /// Validates a worktree-name leaf override. Returns an error message when the
   /// name would escape the parent folder or collide with git internals, or
   /// `nil` when it is empty (use the default) or acceptable. Shared by the

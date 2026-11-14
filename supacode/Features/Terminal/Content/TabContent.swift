@@ -128,6 +128,8 @@ final class InertTabContent: TabContent {
     self.state = state
   }
 
+  nonisolated deinit {}
+
   var kind: ContentKind { state.kind }
 
   var renderer: NSView? { nil }
@@ -189,6 +191,8 @@ final class TerminalContent: TabContent {
     self.state = initialState
     self.searchToolbar = TerminalSearchToolbar(contentID: id)
   }
+
+  nonisolated deinit {}
 
   var renderer: NSView? { surfaceView }
 

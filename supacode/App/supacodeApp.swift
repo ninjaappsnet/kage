@@ -47,6 +47,8 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
   var globalHotkeyMonitor: GlobalHotkeyMonitor?
   private var bufferedDeeplinkURLs: [URL] = []
 
+  nonisolated deinit {}
+
   func applicationWillTerminate(_ notification: Notification) {
     // Release the global Carbon registration explicitly rather than leaning on
     // deinit timing.
@@ -107,7 +109,9 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
 
   func application(_ application: NSApplication, open urls: [URL]) {
     guard let appStore else {
-      SupaLogger("Deeplink").warning("Deeplink received before store initialized, buffering: \(urls)")
+      SupaLogger("Deeplink").warning(
+        "Deeplink received before store initialized, buffering: \(urls.map(DeeplinkClient.loggingDescription))"
+      )
       bufferedDeeplinkURLs.append(contentsOf: urls)
       return
     }

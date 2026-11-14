@@ -111,7 +111,8 @@ extension AppFeature.Action {
         .taskStatusChanged, .blockingScriptCompleted, .commandPaletteToggleRequested,
         .setupScriptConsumed, .worktreeProjectionChanged, .surfaceCreated,
         .tabRemoved, .tabRenamed, .worktreeStateTornDown,
-        .surfacesClosed, .agentHookEventReceived, .terminalHasAnySurfaceChanged,
+        .surfacesClosed, .agentHookEventReceived, .programStatusReceived, .programStatusPromptReturned,
+        .terminalHasAnySurfaceChanged,
         .surfaceCreationFailed, .initialTabCreationFailed:
         return false
       }
@@ -120,7 +121,7 @@ extension AppFeature.Action {
     // change that DOES affect a snapshot input flows back through a separate
     // `.terminalEvent.notificationIndicatorChanged` (counted above) or a
     // `.repositories` cache invalidation (the cacheInvalidations gate above).
-    case .agentPresence, .terminals, .commandPalette, .updates:
+    case .agentPresence, .terminals, .commandPalette, .updates, .license:
       return false
     // Lifecycle / UI / effect-dispatch actions never write snapshot inputs
     // directly; any downstream mutation flows back through a classified arm.
@@ -130,7 +131,7 @@ extension AppFeature.Action {
       .refreshWorktreesRequested,
       .worktreeSettingsLoaded, .openSelectedWorktree, .revealInFinder,
       .openWorktree, .openWorktreeFailed, .openFile, .openFileFromExplorer, .requestQuit,
-      .requestTerminateAllTerminalSessions, .newTerminal, .renameSelectedTerminalTab,
+      .requestTerminateAllTerminalSessions, .newTerminal, .newTerminalInWorktree, .renameSelectedTerminalTab,
       .selectTerminalTabAtIndex, .selectNextTerminalTab, .selectPreviousTerminalTab,
       .splitTerminal, .toggleWindowModeForFocusedPane, .toggleSplitZoom,
       .equalizeSplits, .focusSplit, .jumpToLatestUnread,
@@ -141,7 +142,7 @@ extension AppFeature.Action {
       .navigateSearchPrevious,
       .systemNotificationsPermissionFailed, .deeplinkReceived,
       .deeplink, .commandAckTimedOut, .deeplinkConfirmationTimedOut,
-      .deeplinkReferenceOpened, .settingsRelocationDidNotFinish, .settingsStoreUnreadable,
+      .deeplinkReferenceOpened, .settingsWindowOpened, .settingsRelocationDidNotFinish, .settingsStoreUnreadable,
       .alert, .deeplinkInputConfirmation:
       return false
     }

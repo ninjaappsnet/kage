@@ -67,6 +67,7 @@ struct ContentView: View {
     }
     .alert($repositoriesStore.scope(state: \.alert, action: \.alert))
     .alert($store.scope(state: \.alert, action: \.alert))
+    .alert($store.scope(state: \.license.alert, action: \.license.alert))
     .sheet(
       item: $store.scope(state: \.deeplinkInputConfirmation, action: \.deeplinkInputConfirmation)
     ) { confirmationStore in
@@ -106,6 +107,7 @@ struct ContentView: View {
     ) { renameStore in
       RenameBranchView(store: renameStore)
     }
+    .modifier(TerminalColorSchemeModifier(terminalManager: terminalManager))
     .focusedSceneAction(\.toggleLeftSidebarAction, enabled: true) {
       withAnimation(.easeOut(duration: 0.2)) {
         leftSidebarVisibility = leftSidebarVisibility == .detailOnly ? .all : .detailOnly
@@ -147,7 +149,9 @@ struct ContentView: View {
     }
     .background(WindowTabbingDisabler())
     .background(WindowTintBackdrop(runtime: terminalManager.ghosttyRuntime))
-    .background(WindowChromeObserver(runtime: terminalManager.ghosttyRuntime))
+    .background(
+      WindowChromeObserver(runtime: terminalManager.ghosttyRuntime, managesAppearance: false)
+    )
     .background(
       WindowTitleHost(
         repositoriesStore: repositoriesStore,
@@ -155,6 +159,17 @@ struct ContentView: View {
       )
     )
     .background(OpenActionIconWarmHost(store: store))
+  }
+}
+
+/// Makes the focused terminal's scheme the window's preferred scheme, so SwiftUI
+/// sets `window.appearance` and the root environment together. A modifier so the
+/// manager read invalidates only this body, not ContentView.
+struct TerminalColorSchemeModifier: ViewModifier {
+  let terminalManager: WorktreeTerminalManager
+
+  func body(content: Content) -> some View {
+    content.preferredColorScheme(terminalManager.surfaceBackgroundColorScheme())
   }
 }
 

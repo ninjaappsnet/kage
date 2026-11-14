@@ -14,7 +14,7 @@ public nonisolated struct AnalyticsClient: Sendable {
   }
 }
 
-extension AnalyticsClient: DependencyKey {
+nonisolated extension AnalyticsClient: DependencyKey {
   // Telemetry stripped from Kage: the live client is intentionally a no-op.
   public static let liveValue = AnalyticsClient(
     capture: { _, _ in },
@@ -27,7 +27,7 @@ extension AnalyticsClient: DependencyKey {
   )
 }
 
-extension DependencyValues {
+nonisolated extension DependencyValues {
   public var analyticsClient: AnalyticsClient {
     get { self[AnalyticsClient.self] }
     set { self[AnalyticsClient.self] = newValue }

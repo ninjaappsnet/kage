@@ -141,7 +141,16 @@ final class WorktreeTerminalManager {
   /// The resolved background of the focused surface in the selected worktree
   /// (OSC 11 override or theme fallback). Single source for the window tint,
   /// `window.appearance`, and the toolbar title's color scheme.
-  private(set) var focusedSurfaceBackground: NSColor
+  private(set) var focusedSurfaceBackground: NSColor {
+    didSet {
+      let scheme = Self.colorScheme(for: focusedSurfaceBackground)
+      guard scheme != focusedSurfaceColorScheme else { return }
+      focusedSurfaceColorScheme = scheme
+    }
+  }
+  /// Light/Dark of `focusedSurfaceBackground`; SwiftUI scheme readers observe
+  /// this instead of the color so same-scheme shade changes skip them.
+  private(set) var focusedSurfaceColorScheme: ColorScheme
   /// Bumped on every Ghostty config reload. Views that read config-derived
   /// colors (split divider, unfocused-split overlay) observe this so they
   /// re-render even when the focused background is unchanged and its dedup
@@ -164,7 +173,9 @@ final class WorktreeTerminalManager {
     self.eventBufferCap = eventBufferCap
     self.runtime = runtime
     self.surfaceBindingActionPerformer = surfaceBindingActionPerformer
-    self.focusedSurfaceBackground = runtime.backgroundColor()
+    let background = runtime.backgroundColor()
+    self.focusedSurfaceBackground = background
+    self.focusedSurfaceColorScheme = Self.colorScheme(for: background)
     self.hookEventSleep = { duration in try await clock.sleep(for: duration) }
     self.layoutDebounceSleep = { duration in try await clock.sleep(for: duration) }
     self.clock = clock
@@ -197,12 +208,14 @@ final class WorktreeTerminalManager {
     configureSocketServer(resolvedServer)
   }
 
-  isolated deinit {
-    for task in pendingIdleHookEvents.values { task.cancel() }
-    for task in layoutDirtyTasks.values { task.cancel() }
-    for entry in layoutFlushTasks.values { entry.task.cancel() }
-    for observer in runtimeObservers {
-      NotificationCenter.default.removeObserver(observer)
+  nonisolated deinit {
+    MainActor.assumeIsolated {
+      for task in pendingIdleHookEvents.values { task.cancel() }
+      for task in layoutDirtyTasks.values { task.cancel() }
+      for entry in layoutFlushTasks.values { entry.task.cancel() }
+      for observer in runtimeObservers {
+        NotificationCenter.default.removeObserver(observer)
+      }
     }
   }
 
@@ -743,6 +756,12 @@ final class WorktreeTerminalManager {
     // OSC-sourced presence events go through the existing idle-debounce funnel.
     host.onAgentHookEvent = { [weak self] event in
       self?.dispatchHookEvent(event)
+    }
+    host.onProgramStatus = { [weak self] surfaceID, report in
+      self?.emit(.programStatusReceived(surfaceID: surfaceID, report: report))
+    }
+    host.onProgramStatusPromptReturned = { [weak self] surfaceID in
+      self?.emit(.programStatusPromptReturned(surfaceID: surfaceID))
     }
     host.onNotificationReceived = { [weak self] surfaceID, title, body, isViewed in
       self?.emit(
@@ -2069,9 +2088,13 @@ final class WorktreeTerminalManager {
 
   // The single funnel for focused-background changes: dedupes on the resolved
   // color so identical focus moves post nothing, then updates the stored source
-  // and notifies the AppKit consumers (window appearance, tint backdrop).
+  // and notifies the AppKit consumers (window background, pane appearance, tint).
   func refreshFocusedSurfaceBackground() {
-    let color = resolveFocusedSurfaceBackground()
+    updateFocusedSurfaceBackground(resolveFocusedSurfaceBackground())
+  }
+
+  // Internal for tests; production goes through `refreshFocusedSurfaceBackground()`.
+  func updateFocusedSurfaceBackground(_ color: NSColor) {
     guard !color.matchesTint(focusedSurfaceBackground) else { return }
     focusedSurfaceBackground = color
     NotificationCenter.default.post(name: .ghosttyFocusedSurfaceBackgroundDidChange, object: self)
@@ -2080,12 +2103,16 @@ final class WorktreeTerminalManager {
   // Chrome tint derived off the terminal background instead of the system accent:
   // whiteish on a dark terminal, blackish on light.
   func chromeOverlayTint() -> Color {
-    focusedSurfaceBackground.isLightColor ? .black : .white
+    focusedSurfaceColorScheme == .light ? .black : .white
   }
 
   // The focused terminal background's luminance as a scheme (dark terminal → .dark).
   func surfaceBackgroundColorScheme() -> ColorScheme {
-    focusedSurfaceBackground.isLightColor ? .light : .dark
+    focusedSurfaceColorScheme
+  }
+
+  static func colorScheme(for background: NSColor) -> ColorScheme {
+    background.isLightColor ? .light : .dark
   }
 
   var ghosttyRuntime: GhosttyRuntime { runtime }

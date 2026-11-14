@@ -51,28 +51,6 @@ struct WorktreeStatusInspectorContainer: View {
     // The panes are Forms of implicit-font labels (LabeledContent, checks,
     // actions); raise the base font so they scale like the explicit chrome.
     .appChromeBaseFont(settingsFile.global.chromeTextSize)
-    .inspectorForcedAppearance(terminalManager.surfaceBackgroundColorScheme())
-  }
-}
-
-/// Forces the inspector subtree to the terminal background's appearance so its
-/// cards and controls match the chrome, not the app appearance. Set on the host
-/// of `.background` to preserve the SwiftUI environment (no re-hosting).
-private struct InspectorForcedAppearance: NSViewRepresentable {
-  let colorScheme: ColorScheme
-
-  func makeNSView(context: Context) -> NSView { NSView() }
-
-  func updateNSView(_ nsView: NSView, context: Context) {
-    let name: NSAppearance.Name = colorScheme == .dark ? .darkAqua : .aqua
-    guard nsView.superview?.appearance?.name != name else { return }
-    nsView.superview?.appearance = NSAppearance(named: name)
-  }
-}
-
-extension View {
-  fileprivate func inspectorForcedAppearance(_ colorScheme: ColorScheme) -> some View {
-    background(InspectorForcedAppearance(colorScheme: colorScheme))
   }
 }
 
@@ -209,6 +187,12 @@ private struct GitInspectorContent: View {
               Text("+\(additions.formatted())").foregroundStyle(.green)
               Text("-\(deletions.formatted())").foregroundStyle(.red)
             }
+          }
+        }
+        if let reviewStatus = pullRequest.reviewStatus {
+          LabeledContent("Review") {
+            Text(reviewStatus.label)
+              .foregroundStyle(reviewStatus.color)
           }
         }
         if readiness.isConflicting {
@@ -1020,7 +1004,7 @@ private struct PrunedNotificationSummaryRow: View {
   }
 }
 
-extension NotificationScope {
+nonisolated extension NotificationScope {
   fileprivate var inspectorTitle: String {
     switch self {
     case .all: "All Notifications"

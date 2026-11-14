@@ -14,7 +14,7 @@ public nonisolated enum SidebarStructureAutoRecomputeKey: DependencyKey {
   public static let testValue: Bool = true
 }
 
-extension DependencyValues {
+nonisolated extension DependencyValues {
   public nonisolated var sidebarStructureAutoRecompute: Bool {
     get { self[SidebarStructureAutoRecomputeKey.self] }
     set { self[SidebarStructureAutoRecomputeKey.self] = newValue }
@@ -516,7 +516,8 @@ extension RepositoriesFeature.Action {
       return []
 
     // Pure signals observed by AppFeature to drain a parked CLI ack; no state.
-    case .cliWorktreeAckCancelled, .archiveWorktreeApplied, .archiveWorktreeApplyFailed:
+    case .cliWorktreeAckCancelled, .worktreeCreationRejected, .remoteWorktreeCreationCompleted,
+      .archiveWorktreeApplied, .archiveWorktreeApplyFailed:
       return []
 
     // `worktreeBranchNameLoaded` mutates `worktree.name` via `updateWorktreeName`,
@@ -1313,7 +1314,7 @@ extension SidebarItemGroup {
   }
 }
 
-extension SidebarState.Section {
+nonisolated extension SidebarState.Section {
   /// A folder repo's custom title / color live on its synthetic folder-worktree
   /// item (the row is a worktree row), keyed by the repo id string.
   func folderWorktreeItem(for repositoryID: Repository.ID) -> SidebarState.Item? {
@@ -1322,7 +1323,7 @@ extension SidebarState.Section {
   }
 }
 
-extension SidebarState {
+nonisolated extension SidebarState {
   /// The user-set title for a repository, wherever it lives: the section for
   /// git repositories, the synthetic folder-worktree item for folder (non-git)
   /// repositories. That is the row title the sidebar itself renders for a folder

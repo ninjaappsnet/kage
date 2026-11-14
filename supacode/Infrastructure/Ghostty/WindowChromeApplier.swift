@@ -49,9 +49,11 @@ enum WindowChromeApplier {
       return
     }
     lastApplied = next
+    window.titlebarSeparatorStyle = .none
+    // An opaque titlebar (full screen included) paints a band over the sidebar's top.
+    window.titlebarAppearsTransparent = true
     if !next.isFullScreen, opacity < 1, !next.isOpaqueOverride {
       window.isOpaque = false
-      window.titlebarAppearsTransparent = true
       // Near-transparent backing so the window-wide blur shows through and the
       // tint is carried by `WindowTintBackdrop`, which masks the surface regions
       // out of it. A surface then composites over blur (its own opacity),
@@ -66,7 +68,6 @@ enum WindowChromeApplier {
       return
     }
     window.isOpaque = true
-    window.titlebarAppearsTransparent = !next.isFullScreen
     window.backgroundColor = tintColor
   }
 
@@ -94,10 +95,8 @@ enum WindowChromeApplier {
       "\(Int(srgb.redComponent * 255)),\(Int(srgb.greenComponent * 255)),\(Int(srgb.blueComponent * 255))"
   }
 
-  // The focused terminal's contrast drives the whole window's NSAppearance, so
-  // the sidebar and chrome (toolbar text included) adopt light/dark to match.
-  // Kept separate from `apply` and driven only by terminal-appearance changes
-  // (focus / OSC 11 / config), never window key/occlusion/alert events: those
+  // Pins a window SwiftUI does not own (pane windows) to its tint's contrast.
+  // Driven only by terminal-appearance changes, never key/occlusion events: those
   // would re-assign the same appearance and flash the window.
   static func applyWindowAppearance(window: NSWindow, runtime: GhosttyRuntime) {
     let name: NSAppearance.Name = Self.tintColor(for: window, runtime: runtime).isLightColor ? .aqua : .darkAqua
@@ -106,14 +105,16 @@ enum WindowChromeApplier {
   }
 }
 
-// Mounted at the ContentView root so window background re-applies on
+// Mounted per window (main and pane) so the window background re-applies on
 // appearance / fullscreen / config changes even when no Ghostty surface is
 // currently displayed (Empty / Loading / Archived / Multi-select states).
 struct WindowChromeObserver: NSViewRepresentable {
   let runtime: GhosttyRuntime
+  // False where SwiftUI owns `window.appearance`; a second writer races its updates.
+  let managesAppearance: Bool
 
   func makeNSView(context: Context) -> WindowChromeObserverNSView {
-    WindowChromeObserverNSView(runtime: runtime)
+    WindowChromeObserverNSView(runtime: runtime, managesAppearance: managesAppearance)
   }
 
   func updateNSView(_ nsView: WindowChromeObserverNSView, context: Context) {}
@@ -122,21 +123,23 @@ struct WindowChromeObserver: NSViewRepresentable {
 @MainActor
 final class WindowChromeObserverNSView: NSView {
   private let runtime: GhosttyRuntime
+  private let managesAppearance: Bool
   private var lastApplied: WindowAppearanceState?
   // `nonisolated(unsafe)` so `deinit` (Swift 6 nonisolated by default for
   // @MainActor classes) can release the tokens; NotificationCenter is itself
   // thread-safe, and only main-actor methods otherwise mutate the array.
   private nonisolated(unsafe) var observers: [NSObjectProtocol] = []
 
-  init(runtime: GhosttyRuntime) {
+  init(runtime: GhosttyRuntime, managesAppearance: Bool) {
     self.runtime = runtime
+    self.managesAppearance = managesAppearance
     super.init(frame: .zero)
   }
 
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError() }
 
-  deinit {
+  nonisolated deinit {
     let center = NotificationCenter.default
     for observer in observers {
       center.removeObserver(observer)
@@ -153,11 +156,8 @@ final class WindowChromeObserverNSView: NSView {
 
   override func viewDidChangeEffectiveAppearance() {
     super.viewDidChangeEffectiveAppearance()
-    // Reclaim the terminal-driven window.appearance: a global appearance set
-    // (GhosttyColorSchemeSyncView's NSApp.appearance, or a system Light/Dark
-    // flip) changes the effective appearance and would otherwise leave the
-    // toolbar stuck on the wrong scheme. The guard in applyWindowAppearance
-    // makes the re-set a no-op once it matches.
+    // Reclaim the terminal-driven window.appearance (where this observer manages
+    // it) after a global appearance set or a system Light/Dark flip.
     applyChrome()
   }
 
@@ -179,15 +179,13 @@ final class WindowChromeObserverNSView: NSView {
   // The window appearance is updated only here, on genuine terminal-appearance
   // changes, so it never flashes on key/occlusion/alert events.
   private func applyAppearance() {
-    guard let window else { return }
+    guard managesAppearance, let window else { return }
     WindowChromeApplier.applyWindowAppearance(window: window, runtime: runtime)
   }
 
   private func addObservers(for window: NSWindow) {
     let center = NotificationCenter.default
     let windowNotifications: [Notification.Name] = [
-      NSWindow.didEnterFullScreenNotification,
-      NSWindow.didExitFullScreenNotification,
       NSWindow.didBecomeKeyNotification,
       NSWindow.didChangeOcclusionStateNotification,
       NSWindow.didChangeScreenNotification,
@@ -196,6 +194,17 @@ final class WindowChromeObserverNSView: NSView {
       observers.append(
         center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
           Task { @MainActor [weak self] in self?.apply() }
+        }
+      )
+    }
+    // AppKit resets titlebar properties across a fullscreen transition, so skip the dedupe there.
+    for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
+      observers.append(
+        center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+          Task { @MainActor [weak self] in
+            self?.lastApplied = nil
+            self?.apply()
+          }
         }
       )
     }
@@ -211,8 +220,8 @@ final class WindowChromeObserverNSView: NSView {
         }
       }
     )
-    // Focus move or OSC 11 on the focused surface re-tints the window and updates
-    // its appearance. Posted by the manager (object: manager), so match any object.
+    // Focus move or OSC 11 re-tints the window (and its appearance where managed).
+    // Posted by the manager (object: manager), so match any object.
     observers.append(
       center.addObserver(
         forName: .ghosttyFocusedSurfaceBackgroundDidChange,
@@ -261,6 +270,8 @@ final class WindowTintBackdropFinder: NSView {
 
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError() }
+
+  nonisolated deinit {}
 
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -315,7 +326,7 @@ final class TintBackdropView: NSView {
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError() }
 
-  deinit {
+  nonisolated deinit {
     let center = NotificationCenter.default
     for observer in observers {
       center.removeObserver(observer)

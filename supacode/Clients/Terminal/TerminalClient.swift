@@ -2,7 +2,7 @@ import ComposableArchitecture
 import Foundation
 import SupacodeSettingsShared
 
-struct TerminalClient {
+nonisolated struct TerminalClient: Sendable {
   var send: @MainActor @Sendable (Command) -> Void
   var events: @MainActor @Sendable () -> AsyncStream<Event>
   var tabExists: @MainActor @Sendable (Worktree.ID, TabID) -> Bool
@@ -151,6 +151,12 @@ struct TerminalClient {
     /// Forwarded from the terminal manager for hook events received over the socket.
     /// `AppFeature` translates this into `agentPresence(.hookEventReceived)`.
     case agentHookEventReceived(AgentHookEvent)
+    /// An OSC 7501 report from a surface, live or dormant.
+    /// `AppFeature` translates this into `agentPresence(.programStatusReceived)`.
+    case programStatusReceived(surfaceID: UUID, report: ProgramStatusReport)
+    /// A shell prompt came back on a surface (OSC 133 command end).
+    /// `AppFeature` translates this into `agentPresence(.programStatusPromptReturned)`.
+    case programStatusPromptReturned(surfaceID: UUID)
     /// Flips when the "any live surface anywhere" aggregate changes. Lets
     /// menu / focused-action gates read one Bool instead of iterating
     /// `sidebarItems` from a view body.
@@ -166,7 +172,7 @@ struct TerminalClient {
   }
 }
 
-extension TerminalClient: DependencyKey {
+nonisolated extension TerminalClient: DependencyKey {
   static let liveValue = TerminalClient(
     send: { _ in fatalError("TerminalClient.send not configured") },
     events: { fatalError("TerminalClient.events not configured") },
@@ -214,7 +220,7 @@ extension TerminalClient: DependencyKey {
   )
 }
 
-extension DependencyValues {
+nonisolated extension DependencyValues {
   var terminalClient: TerminalClient {
     get { self[TerminalClient.self] }
     set { self[TerminalClient.self] = newValue }

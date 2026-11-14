@@ -65,11 +65,11 @@ struct TerminalSchemeHost<Content: View>: NSViewRepresentable {
   }
 }
 
-/// Pins the toolbar host it lands in to the terminal scheme. The main window
-/// is left alone (WindowChromeApplier owns its appearance, same value); a
-/// borderless host is the toolbar strip or item overlay, whose CONTENT VIEW
-/// takes the pin. Never the window property itself: re-pinning the private
-/// window makes AppKit rebuild its items, which re-triggers the pin in a loop.
+/// Pins the toolbar host it lands in to the terminal scheme. Titled windows are
+/// left alone (their owner already sets the same scheme); a borderless host is
+/// the toolbar strip or item overlay, whose CONTENT VIEW takes the pin. Never the
+/// window property itself: re-pinning the private window makes AppKit rebuild its
+/// items, which re-triggers the pin in a loop.
 final class SchemeHostingView<Content: View>: NSHostingView<Content> {
   var schemeName: NSAppearance.Name = .aqua {
     didSet {
@@ -77,6 +77,8 @@ final class SchemeHostingView<Content: View>: NSHostingView<Content> {
       pinToolbarHostAppearance()
     }
   }
+
+  nonisolated deinit {}
 
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
@@ -190,8 +192,14 @@ private struct RepositoryOwnerAvatar: View {
   @State private var avatarURL: URL?
   @Dependency(GitClientDependency.self) private var gitClient
 
+  init(rootURL: URL) {
+    self.rootURL = rootURL
+    _avatarURL = State(initialValue: GitHubOwnerAvatar.cachedURL(for: rootURL))
+  }
+
   var body: some View {
     KFImage(avatarURL)
+      .startLoadingBeforeViewAppear()
       .placeholder {
         Image(systemName: "arrow.trianglehead.branch")
           .resizable()
@@ -206,15 +214,33 @@ private struct RepositoryOwnerAvatar: View {
       .shadow(radius: 1, y: 0.5)
       .accessibilityHidden(true)
       .task(id: rootURL) {
+        avatarURL = GitHubOwnerAvatar.cachedURL(for: rootURL)
         avatarURL = await GitHubOwnerAvatar.url(for: rootURL, gitClient: gitClient)
       }
   }
 }
 
 enum GitHubOwnerAvatar {
+  // Last resolved avatar per repository root, so a remounted label skips the placeholder.
+  private static var resolvedURLs: [URL: URL] = [:]
+
+  static func cachedURL(for rootURL: URL) -> URL? {
+    resolvedURLs[rootURL]
+  }
+
+  /// Resolves the owner avatar, keeping the cached one when the lookup is cancelled.
   static func url(for rootURL: URL, gitClient: GitClientDependency) async -> URL? {
-    guard let info = await gitClient.remoteInfo(rootURL) else { return nil }
-    return URL(string: "https://github.com/\(info.owner).png?size=64")
+    guard let info = await gitClient.remoteInfo(rootURL) else {
+      // `remoteInfo` reports cancellation as nil; only a completed miss evicts the cached URL.
+      guard Task.isCancelled else {
+        resolvedURLs[rootURL] = nil
+        return nil
+      }
+      return resolvedURLs[rootURL]
+    }
+    let url = URL(string: "https://github.com/\(info.owner).png?size=64")
+    resolvedURLs[rootURL] = url
+    return url
   }
 }
 
