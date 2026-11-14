@@ -21,6 +21,8 @@ struct FileViewerHibernationTests {
     let kind: ContentKind = .fileViewer
     private var view: NSView?
 
+    nonisolated deinit {}
+
     init(id: ContentID) {
       self.id = id
     }

@@ -25,6 +25,8 @@ struct FileViewerCloseConfirmationTests {
     private(set) var saveCalls = 0
     private var view: NSView?
 
+    nonisolated deinit {}
+
     init(id: ContentID) {
       self.id = id
     }
