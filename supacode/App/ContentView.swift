@@ -38,6 +38,9 @@ struct ContentView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
           SidebarBottomCardView(store: store)
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+          ClaudeUsageSidebarPanel(store: store.scope(state: \.claudeAccounts, action: \.claudeAccounts))
+        }
     } detail: {
       WorktreeDetailView(store: store, terminalManager: terminalManager)
     }
