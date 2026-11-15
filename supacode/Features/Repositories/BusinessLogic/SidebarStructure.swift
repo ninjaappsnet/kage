@@ -567,6 +567,9 @@ extension RepositoriesFeature.Action {
       return .allSidebar
     case .repositoryCustomization:
       return []
+    // Titles the new Home entry, like a customization save.
+    case .homeTerminalLoaded:
+      return .allSidebar
 
     // Worktree customization save mutates the bucketed Item's title / color, picked up via
     // per-row `customTitle` / `customTint` mirror (highlight tags + notification group name).
@@ -605,6 +608,7 @@ extension RepositoriesFeature.Action {
     case .task, .setOpenPanelPresented,
       .requestAddRemoteRepository, .requestEditRemoteRepository, .remoteConnectionForm,
       .requestCloneRepository, .cloneRepositoryForm,
+      .openHomeTerminal,
       .loadPersistedRepositories,
       .removeRemoteRepository,
       .refreshWorktrees, .reloadRepositories,

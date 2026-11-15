@@ -197,6 +197,10 @@ struct LayoutFeature {
     case toggleZoom(paneID: PaneID)
     case hibernateTab(id: TabID)
     case wakeTab(id: TabID)
+    /// Fork: swaps the tab's content for a fresh one seeded with `content` under a
+    /// new content id, reaping the old one like a close. The tab keeps its id,
+    /// title, position and selection.
+    case replaceTabContent(id: TabID, content: ContentState)
     case runtime(RuntimeEvent)
     /// A content asked to close tabs in its pane; gated by the
     /// confirm-close-tab mode.
@@ -241,6 +245,8 @@ struct LayoutFeature {
       .contentRequestedSplit, .contentRequestedFocus, .contentRequestedFocusSplit,
       .contentRequestedToggleZoom, .contentRequestedResize, .contentRequestedGotoTab,
       .contentRequestedMoveTab, .alert:
+      return false
+    case .replaceTabContent:
       return false
     }
   }
@@ -313,6 +319,8 @@ struct LayoutFeature {
         return reduceHibernateTab(&state, tabID: tabID)
       case .wakeTab(let tabID):
         return reduceWakeTab(&state, tabID: tabID)
+      case .replaceTabContent(let tabID, let content):
+        return reduceReplaceTabContent(&state, tabID: tabID, content: content)
       case .runtime(let event):
         return reduceRuntimeEvent(&state, event: event)
       case .contentRequestedClose(let contentID, let scope):
@@ -1194,5 +1202,40 @@ nonisolated extension ContentState {
     case .terminal(let state): state
     case .fileViewer: nil
     }
+  }
+}
+
+// MARK: - Content replacement (fork).
+
+extension LayoutFeature {
+  /// Provisions the replacement before reaping the old content: the old live
+  /// renderer anchors the spawn geometry and seeds inherited config (font, and
+  /// the folder when the seed carries none). The fresh content id is what makes
+  /// the session new; reusing the old id would race the kill and could
+  /// reattach the old session.
+  private func reduceReplaceTabContent(_ state: inout State, tabID: TabID, content: ContentState) -> Effect<Action> {
+    guard var pane = state.layout.pane(containingTab: tabID), let oldContentID = pane.tabs[id: tabID]?.content.id
+    else {
+      Self.logger.warning("replaceTabContent: unknown tab \(tabID.rawValue)")
+      return .none
+    }
+    let newContentID = ContentID(rawValue: uuid())
+    guard state.layout.tab(containingContent: newContentID) == nil else {
+      Self.logger.warning("replaceTabContent refused duplicate content \(newContentID.rawValue)")
+      return .none
+    }
+    let request = ContentRequest(
+      worktreeID: state.id,
+      tabID: tabID,
+      contentID: newContentID,
+      content: content,
+      origin: .tab,
+      inheritedFrom: oldContentID
+    )
+    let geometry = contentRuntime.spawnGeometry(near: oldContentID)
+    guard provisionContent(request, at: geometry, operation: "replaceTabContent") else { return .none }
+    pane.tabs[id: tabID]?.content = ContentSnapshot(id: newContentID, state: content)
+    state.layout.panes[id: pane.id] = pane
+    return reap(oldContentID, worktree: state.id)
   }
 }

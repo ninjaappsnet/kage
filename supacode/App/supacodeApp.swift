@@ -409,7 +409,7 @@ struct SupacodeApp: App {
       environmentExtras: { [weak terminalManager] request in
         let host = terminalManager?.hostIfExists(for: request.worktreeID)
         return (host?.blockingScriptEnvironment(for: request.tabID) ?? [:])
-          .merging(ClaudeAccountEnvironment.variables(tabID: request.tabID.rawValue, worktree: host?.worktree)) {
+          .merging(ClaudeAccountEnvironment.variables(request: request, worktree: host?.worktree)) {
             current, _ in current
           }
       }
@@ -665,6 +665,8 @@ struct SupacodeApp: App {
           .environment(openActionIcons)
           .appChromeTextSize(store.settings.chromeTextSize)
           .background { GlobalHotkeyInstaller(monitor: globalHotkeyMonitor) }
+          .environment(\.claudeAccountsStore, store.scope(state: \.claudeAccounts, action: \.claudeAccounts))
+          .claudeAccountRestartTabAlert(store: store.scope(state: \.claudeAccounts, action: \.claudeAccounts))
       }
       .openSettingsOnSelection(store: store)
       .openDeeplinkReferenceOnRequest(store: store)

@@ -102,6 +102,9 @@ struct TerminalsFeature {
       .contentRequestedFocus, .contentRequestedFocusSplit, .contentRequestedToggleZoom,
       .contentRequestedResize, .contentRequestedGotoTab, .contentRequestedMoveTab, .alert:
       return true
+    // A fresh content in a kept tab: its hibernation state starts over.
+    case .replaceTabContent:
+      return true
     }
   }
 

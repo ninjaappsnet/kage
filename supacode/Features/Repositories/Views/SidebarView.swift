@@ -65,6 +65,9 @@ struct SidebarView: View {
         .labelStyle(.iconOnly)
         .help("Add Repository, Folder, or Remote")
       }
+      ToolbarItem(placement: .primaryAction) {
+        HomeTerminalButton(store: store)
+      }
     }
     .sheet(item: $store.scope(state: \.remoteConnectionForm, action: \.remoteConnectionForm)) { formStore in
       RemoteConnectionFormView(store: formStore)

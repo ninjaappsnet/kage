@@ -70,6 +70,7 @@ struct WorktreeLayoutView: View {
       }
       syncResolvedWindowActivity()
     }
+    .environment(\.claudeAccountsWorktree, worktree)
   }
 
   private var host: WorktreeContentHost? {
