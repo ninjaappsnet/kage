@@ -259,6 +259,10 @@ struct ClaudeAccountsFeature {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .none }
         state.$file.withLock { file in
+          if id == ClaudeAccount.mainID {
+            file.mainAccountName = trimmed
+            return
+          }
           guard let index = file.accounts.firstIndex(where: { $0.id == id }) else { return }
           file.accounts[index].name = trimmed
         }
