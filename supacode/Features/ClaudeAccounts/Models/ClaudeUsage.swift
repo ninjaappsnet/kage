@@ -15,6 +15,18 @@ nonisolated struct ClaudeUsage: Equatable, Sendable {
     var percentLabel: String {
       "\(Int(min(max(percentUsed, 0), 100).rounded()))%"
     }
+
+    /// Time left until the window resets, rounded down: "2d 5h", "7h" under a
+    /// day, "<1h" in the last hour. Nil without a reset time or once it passed.
+    func resetCountdown(now: Date) -> String? {
+      guard let resetsAt else { return nil }
+      let remaining = Int(resetsAt.timeIntervalSince(now))
+      guard remaining > 0 else { return nil }
+      let days = remaining / 86_400
+      let hours = remaining % 86_400 / 3_600
+      if days > 0 { return "\(days)d \(hours)h" }
+      return hours > 0 ? "\(hours)h" : "<1h"
+    }
   }
 
   /// The rolling five-hour session window; absent on plans and moments without one.
@@ -92,12 +104,20 @@ nonisolated enum ClaudeUsageError: LocalizedError, Equatable {
 
 extension ClaudeAccountsFeature.State {
   /// An account's name for menus, with its weekly usage when known: "Work — 42% weekly".
-  func menuTitle(for account: ClaudeAccount) -> String {
-    Self.menuTitle(for: account, usage: usages[account.id])
+  func menuTitle(for account: ClaudeAccount, now: Date = .now) -> String {
+    Self.menuTitle(for: account, usage: usages[account.id], now: now)
   }
 
-  static func menuTitle(for account: ClaudeAccount, usage: ClaudeAccountsFeature.UsageSnapshot?) -> String {
+  /// "Work — 42% weekly · resets in 2d 5h"; the countdown is dropped when the
+  /// reset time is unknown, and the usage when it hasn't been fetched.
+  static func menuTitle(
+    for account: ClaudeAccount,
+    usage: ClaudeAccountsFeature.UsageSnapshot?,
+    now: Date = .now
+  ) -> String {
     guard let weekly = usage?.usage?.sevenDay else { return account.name }
-    return "\(account.name) — \(weekly.percentLabel) weekly"
+    let title = "\(account.name) — \(weekly.percentLabel) weekly"
+    guard let countdown = weekly.resetCountdown(now: now) else { return title }
+    return "\(title) · resets in \(countdown)"
   }
 }

@@ -201,3 +201,41 @@ struct ClaudeAccountMenuTitleTests {
     #expect(state.menuTitle(for: work) == "Work — 42% weekly")
   }
 }
+
+// MARK: - Reset countdown.
+
+struct ClaudeUsageCountdownTests {
+  private let now = Date(timeIntervalSince1970: 1_000_000)
+
+  private func window(resetsIn seconds: TimeInterval?) -> ClaudeUsage.Window {
+    ClaudeUsage.Window(percentUsed: 10, resetsAt: seconds.map { now.addingTimeInterval($0) })
+  }
+
+  @Test func daysAndUnpaddedHours() {
+    #expect(window(resetsIn: 2 * 86_400 + 5 * 3_600 + 59 * 60).resetCountdown(now: now) == "2d 5h")
+    #expect(window(resetsIn: 6 * 86_400 + 23 * 3_600).resetCountdown(now: now) == "6d 23h")
+    #expect(window(resetsIn: 1 * 86_400).resetCountdown(now: now) == "1d 0h")
+  }
+
+  @Test func underADayShowsHoursOnly() {
+    #expect(window(resetsIn: 7 * 3_600 + 10).resetCountdown(now: now) == "7h")
+    #expect(window(resetsIn: 20 * 60).resetCountdown(now: now) == "<1h")
+  }
+
+  @Test func noCountdownWithoutAFutureReset() {
+    #expect(window(resetsIn: nil).resetCountdown(now: now) == nil)
+    #expect(window(resetsIn: -60).resetCountdown(now: now) == nil)
+  }
+
+  @Test func menuTitleAddsTheCountdown() {
+    let work = ClaudeAccount(id: "work", name: "Work", configDirectoryPath: "/tmp/kage-claude/work")
+    let snapshot = ClaudeAccountsFeature.UsageSnapshot(
+      usage: ClaudeUsage(
+        fiveHour: nil,
+        sevenDay: .init(percentUsed: 41.6, resetsAt: now.addingTimeInterval(2 * 86_400 + 5 * 3_600))),
+      fetchedAt: now)
+    #expect(
+      ClaudeAccountsFeature.State.menuTitle(for: work, usage: snapshot, now: now)
+        == "Work — 42% weekly · resets in 2d 5h")
+  }
+}
