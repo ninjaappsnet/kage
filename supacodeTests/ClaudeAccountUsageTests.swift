@@ -211,15 +211,23 @@ struct ClaudeUsageCountdownTests {
     ClaudeUsage.Window(percentUsed: 10, resetsAt: seconds.map { now.addingTimeInterval($0) })
   }
 
-  @Test func daysAndUnpaddedHours() {
-    #expect(window(resetsIn: 2 * 86_400 + 5 * 3_600 + 59 * 60).resetCountdown(now: now) == "2d 5h")
-    #expect(window(resetsIn: 6 * 86_400 + 23 * 3_600).resetCountdown(now: now) == "6d 23h")
+  @Test func daysAndHoursToOneDecimal() {
+    #expect(window(resetsIn: 2 * 86_400 + 5 * 3_600 + 30 * 60).resetCountdown(now: now) == "2d 5.5h")
+    #expect(window(resetsIn: 6 * 86_400 + 23 * 3_600 + 6 * 60).resetCountdown(now: now) == "6d 23.1h")
+    // A whole hour drops the ".0".
+    #expect(window(resetsIn: 2 * 86_400 + 5 * 3_600 + 59 * 60).resetCountdown(now: now) == "2d 6h")
     #expect(window(resetsIn: 1 * 86_400).resetCountdown(now: now) == "1d 0h")
+  }
+
+  @Test func roundingCarriesIntoTheNextDay() {
+    #expect(window(resetsIn: 23 * 3_600 + 58 * 60).resetCountdown(now: now) == "1d 0h")
   }
 
   @Test func underADayShowsHoursOnly() {
     #expect(window(resetsIn: 7 * 3_600 + 10).resetCountdown(now: now) == "7h")
-    #expect(window(resetsIn: 20 * 60).resetCountdown(now: now) == "<1h")
+    #expect(window(resetsIn: 7 * 3_600 + 45 * 60).resetCountdown(now: now) == "7.8h")
+    #expect(window(resetsIn: 20 * 60).resetCountdown(now: now) == "0.3h")
+    #expect(window(resetsIn: 2 * 60).resetCountdown(now: now) == "<0.1h")
   }
 
   @Test func noCountdownWithoutAFutureReset() {
@@ -232,10 +240,10 @@ struct ClaudeUsageCountdownTests {
     let snapshot = ClaudeAccountsFeature.UsageSnapshot(
       usage: ClaudeUsage(
         fiveHour: nil,
-        sevenDay: .init(percentUsed: 41.6, resetsAt: now.addingTimeInterval(2 * 86_400 + 5 * 3_600))),
+        sevenDay: .init(percentUsed: 41.6, resetsAt: now.addingTimeInterval(2 * 86_400 + 5 * 3_600 + 30 * 60))),
       fetchedAt: now)
     #expect(
       ClaudeAccountsFeature.State.menuTitle(for: work, usage: snapshot, now: now)
-        == "Work — 42% weekly · resets in 2d 5h")
+        == "Work — 42% weekly · resets in 2d 5.5h")
   }
 }
