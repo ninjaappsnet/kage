@@ -31,6 +31,22 @@ nonisolated struct ClaudeUsage: Equatable, Sendable {
       let hours = hourTenths % 10 == 0 ? "\(hourTenths / 10)h" : "\(hourTenths / 10).\(hourTenths % 10)h"
       return days > 0 ? "\(days)d \(hours)" : hours
     }
+
+    /// Time left until the window resets in whole minutes: "2d 5h 12m",
+    /// "1d 0h 7m", "5h 3m", "12m", "<1m" in the last minute. Leading zero
+    /// units are dropped, inner ones kept. Nil without a future reset time.
+    func timeUntilReset(now: Date) -> String? {
+      guard let resetsAt else { return nil }
+      let remaining = resetsAt.timeIntervalSince(now)
+      guard remaining > 0 else { return nil }
+      let minutes = Int(remaining / 60)
+      guard minutes > 0 else { return "<1m" }
+      let days = minutes / 1_440
+      let hours = minutes % 1_440 / 60
+      let mins = minutes % 60
+      if days > 0 { return "\(days)d \(hours)h \(mins)m" }
+      return hours > 0 ? "\(hours)h \(mins)m" : "\(mins)m"
+    }
   }
 
   /// The rolling five-hour session window; absent on plans and moments without one.

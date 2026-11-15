@@ -1,12 +1,18 @@
 import ComposableArchitecture
+import Sharing
 import SwiftUI
 
 /// File → New Tab with Claude Account ▸ <account>. Hidden until a second account
 /// exists, since with only the main account there is nothing to choose.
 struct ClaudeAccountCommands: Commands {
   @Bindable var store: StoreOf<AppFeature>
+  @Shared(.claudeUsageSidebarPanelVisible) private var showUsagePanel: Bool
 
   var body: some Commands {
+    CommandGroup(after: .sidebar) {
+      Toggle("Show Claude Usage in Sidebar", isOn: Binding($showUsagePanel))
+        .help("Show each Claude account's weekly usage and reset time at the bottom of the sidebar")
+    }
     CommandGroup(after: .newItem) {
       let accounts = store.claudeAccounts.file.allAccounts
       if accounts.count > 1 {

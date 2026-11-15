@@ -83,6 +83,10 @@ struct ClaudeAccountsFeature {
     case statusLoaded(ClaudeAccountID, Result<ClaudeAuthStatus, Error>)
     case refreshUsage(ClaudeAccountID)
     case usageLoaded(ClaudeAccountID, Result<ClaudeUsage, Error>)
+    /// The sidebar usage panel came on screen: keep its numbers fresh while it shows.
+    case usagePanelAppeared
+    case usagePanelDisappeared
+    case refreshLoggedInUsages
     case addAccountButtonTapped
     case addAccountCancelled
     case addAccountConfirmed
@@ -117,12 +121,15 @@ struct ClaudeAccountsFeature {
   /// Minimum gap between two usage requests for the same account, however often
   /// Settings is opened: the endpoint rate-limits.
   nonisolated static let usageMinimumInterval: TimeInterval = 60
+  /// How often the sidebar usage panel re-fetches while it is visible.
+  nonisolated static let usagePanelRefreshInterval: Duration = .seconds(5 * 60)
   /// Minimum gap between two reminders about the same account.
   nonisolated static let reminderInterval: TimeInterval = 24 * 60 * 60
 
   private nonisolated enum CancelID: Hashable, Sendable {
     case periodicRefresh
     case usage(ClaudeAccountID)
+    case usagePanel
     case login
     case mcpSync
   }
@@ -217,6 +224,25 @@ struct ClaudeAccountsFeature {
 
       case .usageLoaded:
         return .none
+
+      case .usagePanelAppeared:
+        return .run { [clock] send in
+          await send(.refreshLoggedInUsages)
+          for await _ in clock.timer(interval: Self.usagePanelRefreshInterval) {
+            await send(.refreshLoggedInUsages)
+          }
+        }
+        .cancellable(id: CancelID.usagePanel, cancelInFlight: true)
+
+      case .usagePanelDisappeared:
+        return .cancel(id: CancelID.usagePanel)
+
+      case .refreshLoggedInUsages:
+        let ids = state.file.allAccounts.map(\.id).filter { id in
+          if case .loaded(let status) = state.statuses[id] { return status.loggedIn }
+          return false
+        }
+        return .merge(ids.map { .send(.refreshUsage($0)) })
 
       case .statusLoaded(let id, .failure(let error)):
         state.statuses[id] = .failed(error.localizedDescription)
