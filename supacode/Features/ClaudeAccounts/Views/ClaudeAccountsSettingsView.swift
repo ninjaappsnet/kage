@@ -146,19 +146,15 @@ private struct ClaudeAccountRow: View {
     HStack(alignment: .firstTextBaseline) {
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 6) {
-          if account.isMain {
-            Text(account.name)
-          } else {
-            TextField("Name", text: $draftName)
-              .textFieldStyle(.plain)
-              .focused($isEditingName)
-              .onSubmit { onRename(draftName) }
-              .onChange(of: isEditingName) { _, editing in
-                if !editing { onRename(draftName) }
-              }
-              .fixedSize()
-              .help("Rename this account")
-          }
+          TextField("Name", text: $draftName)
+            .textFieldStyle(.plain)
+            .focused($isEditingName)
+            .onSubmit { onRename(draftName) }
+            .onChange(of: isEditingName) { _, editing in
+              if !editing { onRename(draftName) }
+            }
+            .fixedSize()
+            .help("Rename this account")
           if isDefault {
             Text("Default")
               .font(.caption)

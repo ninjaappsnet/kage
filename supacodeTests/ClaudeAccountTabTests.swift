@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import DependenciesTestSupport
 import Foundation
 import Testing
 
@@ -139,5 +140,33 @@ struct ClaudeAccountRequestedTabTests {
     ClaudeSurfaceAccounts.requestAccountForNextTab("work")
     let late = ContinuousClock.now.advanced(by: ClaudeSurfaceAccounts.requestLifetime + .seconds(1))
     #expect(ClaudeSurfaceAccounts.takeRequestedAccount(now: late) == nil)
+  }
+}
+
+// MARK: - Naming the main account.
+
+@MainActor
+struct ClaudeMainAccountNameTests {
+  @Test(.dependencies) func theMainAccountCanBeRenamed() async {
+    let state = ClaudeAccountsFeature.State()
+    state.$file.withLock { $0 = ClaudeAccountsFile() }
+    let store = TestStore(initialState: state) { ClaudeAccountsFeature() }
+    store.exhaustivity = .off(showSkippedAssertions: false)
+    await store.send(.renameAccount(ClaudeAccount.mainID, "  Personal "))
+    #expect(store.state.file.mainAccountName == "Personal")
+    #expect(store.state.file.allAccounts.first?.name == "Personal")
+    #expect(store.state.file.allAccounts.first?.isMain == true)
+  }
+
+  @Test func fallbackResolutionKeepsTheMainName() {
+    var file = ClaudeAccountsFile()
+    file.mainAccountName = "Personal"
+    #expect(file.resolvedAccount(tabID: nil, repositoryRootPath: nil).name == "Personal")
+  }
+
+  @Test func filesWithoutAMainNameStillSayMain() throws {
+    let file = try JSONDecoder().decode(ClaudeAccountsFile.self, from: Data("{}".utf8))
+    #expect(file.mainAccountName == nil)
+    #expect(file.allAccounts.first?.name == "Main")
   }
 }

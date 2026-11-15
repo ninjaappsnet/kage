@@ -11,6 +11,8 @@ import SupacodeSettingsShared
 nonisolated struct ClaudeAccountsFile: Codable, Equatable, Sendable {
   /// Non-main accounts, in display order.
   var accounts: [ClaudeAccount] = []
+  /// The user's name for the main (`~/.claude`) account; nil shows "Main".
+  var mainAccountName: String?
   /// Account new terminal tabs use when nothing more specific applies.
   var defaultAccountID: ClaudeAccountID = ClaudeAccount.mainID
   /// Repository root path → account. Overrides the default.
@@ -33,6 +35,7 @@ nonisolated struct ClaudeAccountsFile: Codable, Equatable, Sendable {
   init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     accounts = try container.decodeIfPresent([ClaudeAccount].self, forKey: .accounts) ?? []
+    mainAccountName = try container.decodeIfPresent(String.self, forKey: .mainAccountName)
     defaultAccountID = try container.decodeIfPresent(String.self, forKey: .defaultAccountID) ?? ClaudeAccount.mainID
     repositoryAccountIDs = try container.decodeIfPresent([String: String].self, forKey: .repositoryAccountIDs) ?? [:]
     tabAccountIDs = try container.decodeIfPresent([String: String].self, forKey: .tabAccountIDs) ?? [:]
@@ -43,7 +46,14 @@ nonisolated struct ClaudeAccountsFile: Codable, Equatable, Sendable {
 
   /// Main first, then the stored accounts.
   var allAccounts: [ClaudeAccount] {
-    [ClaudeAccount.main()] + accounts
+    [mainAccount] + accounts
+  }
+
+  /// `~/.claude`, under the user's name for it.
+  var mainAccount: ClaudeAccount {
+    var main = ClaudeAccount.main()
+    if let mainAccountName { main.name = mainAccountName }
+    return main
   }
 
   func account(id: ClaudeAccountID?) -> ClaudeAccount? {
@@ -61,7 +71,7 @@ nonisolated struct ClaudeAccountsFile: Codable, Equatable, Sendable {
     if let repositoryRootPath, let account = account(id: repositoryAccountIDs[repositoryRootPath]) {
       return account
     }
-    return account(id: defaultAccountID) ?? ClaudeAccount.main()
+    return account(id: defaultAccountID) ?? mainAccount
   }
 
   /// Drops every reference to `accountID` so removed accounts leave no dangling choice.
