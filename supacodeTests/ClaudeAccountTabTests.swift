@@ -170,3 +170,31 @@ struct ClaudeMainAccountNameTests {
     #expect(file.allAccounts.first?.name == "Main")
   }
 }
+
+// MARK: - Account tag on the tab.
+
+@MainActor
+struct ClaudeAccountTabTagTests {
+  private let work = ClaudeAccount(id: "work", name: "Work", configDirectoryPath: "/tmp/kage-claude/work")
+  private let contentID = UUID()
+
+  @Test func tagShowsTheSurfaceAccountOnceASecondAccountExists() {
+    var file = ClaudeAccountsFile()
+    file.accounts = [work]
+    #expect(ClaudeAccountTabTag.label(contentID: contentID, file: file, accountIDs: [contentID: "work"]) == "Work")
+    file.mainAccountName = "Personal"
+    #expect(
+      ClaudeAccountTabTag.label(contentID: contentID, file: file, accountIDs: [contentID: ClaudeAccount.mainID])
+        == "Personal")
+  }
+
+  @Test func noTagWithASingleAccountOrUnknownSurface() {
+    var file = ClaudeAccountsFile()
+    #expect(
+      ClaudeAccountTabTag.label(contentID: contentID, file: file, accountIDs: [contentID: ClaudeAccount.mainID])
+        == nil)
+    file.accounts = [work]
+    #expect(ClaudeAccountTabTag.label(contentID: contentID, file: file, accountIDs: [:]) == nil)
+    #expect(ClaudeAccountTabTag.label(contentID: contentID, file: file, accountIDs: [contentID: "gone"]) == nil)
+  }
+}
