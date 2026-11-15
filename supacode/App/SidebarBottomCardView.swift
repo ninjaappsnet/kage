@@ -45,7 +45,7 @@ struct SidebarBottomCardView: View {
           fileExplorerBeta: fileExplorerBetaMode
         )
       )
-    )
+    ).withoutAnnouncements
     Group {
       switch resolved {
       case .none:
