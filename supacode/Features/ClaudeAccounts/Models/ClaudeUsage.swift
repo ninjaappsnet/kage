@@ -16,16 +16,20 @@ nonisolated struct ClaudeUsage: Equatable, Sendable {
       "\(Int(min(max(percentUsed, 0), 100).rounded()))%"
     }
 
-    /// Time left until the window resets, rounded down: "2d 5h", "7h" under a
-    /// day, "<1h" in the last hour. Nil without a reset time or once it passed.
+    /// Time left until the window resets, hours to one decimal: "2d 5.5h",
+    /// "2d 6h" for a whole hour, "7.8h" under a day, "<0.1h" in the last six
+    /// minutes. Rounds the total first so 23h58m reads "1d 0h", never "24h".
+    /// Nil without a reset time or once it passed.
     func resetCountdown(now: Date) -> String? {
       guard let resetsAt else { return nil }
-      let remaining = Int(resetsAt.timeIntervalSince(now))
+      let remaining = resetsAt.timeIntervalSince(now)
       guard remaining > 0 else { return nil }
-      let days = remaining / 86_400
-      let hours = remaining % 86_400 / 3_600
-      if days > 0 { return "\(days)d \(hours)h" }
-      return hours > 0 ? "\(hours)h" : "<1h"
+      let tenths = Int((remaining / 360).rounded())
+      guard tenths > 0 else { return "<0.1h" }
+      let days = tenths / 240
+      let hourTenths = tenths % 240
+      let hours = hourTenths % 10 == 0 ? "\(hourTenths / 10)h" : "\(hourTenths / 10).\(hourTenths % 10)h"
+      return days > 0 ? "\(days)d \(hours)" : hours
     }
   }
 
