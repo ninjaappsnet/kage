@@ -30,6 +30,8 @@ nonisolated struct ClaudeAccountsClient: Sendable {
   var prepareDirectory: @Sendable (URL) async throws -> ClaudeAccountLayout.Report
   var readMCPServers: @Sendable (ClaudeAccount) async throws -> ClaudeMCPServerSync.Servers
   var applyMCPOperations: @Sendable (ClaudeAccount, [ClaudeMCPServerSync.Operation]) async throws -> Void
+  /// Plan usage for the account's stored login; see `ClaudeCredentials.fetchUsage`.
+  var usage: @Sendable (ClaudeAccount) async throws -> ClaudeUsage
 }
 
 nonisolated extension ClaudeAccountsClient: DependencyKey {
@@ -75,6 +77,9 @@ nonisolated extension ClaudeAccountsClient: DependencyKey {
               ["mcp", "add-json", "--scope", "user", operation.serverName, json], as: account)
           }
         }
+      },
+      usage: { account in
+        try await ClaudeCredentials.fetchUsage(for: account)
       }
     )
   }()
@@ -87,7 +92,8 @@ nonisolated extension ClaudeAccountsClient: DependencyKey {
     logout: { _ in },
     prepareDirectory: { _ in ClaudeAccountLayout.Report() },
     readMCPServers: { _ in [:] },
-    applyMCPOperations: { _, _ in }
+    applyMCPOperations: { _, _ in },
+    usage: { _ in throw ClaudeUsageError.notLoggedIn }
   )
 }
 

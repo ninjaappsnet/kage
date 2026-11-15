@@ -117,6 +117,9 @@ nonisolated struct TerminalClient: Sendable {
     /// Fans a hibernation Beta-flag flip into every worktree state: enabling
     /// re-arms grace timers for hidden tabs, disabling cancels pending ones.
     case setTerminalHibernationEnabled(Bool)
+    /// Fork: replaces the tab's terminal with a fresh session (new zmx session,
+    /// re-resolved environment), keeping the tab. See `TerminalTabRestart`.
+    case restartTab(Worktree, tabID: TabID, resume: TerminalTabRestart.Resume?)
   }
 
   enum Event: Equatable {

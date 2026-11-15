@@ -14,12 +14,17 @@ struct ClaudeAccountsFeature {
   struct State: Equatable {
     @Shared(.claudeAccountsFile) var file = ClaudeAccountsFile()
     var statuses: [ClaudeAccountID: StatusEntry] = [:]
+    /// Last plan usage fetched per logged-in account. A failed fetch keeps the
+    /// previous value: the endpoint is undocumented and a stale number beats none.
+    var usages: [ClaudeAccountID: UsageSnapshot] = [:]
     var newAccountName = ""
     var isAddAccountPresented = false
     var login: LoginState?
     var mcpSync: MCPSyncState = .idle
     var errorMessage: String?
     @Presents var alert: AlertState<Alert>?
+    /// Restart-tab confirmation, presented by the main window (not Settings).
+    @Presents var restartTabAlert: AlertState<RestartTabAlert>?
 
     var isNewAccountNameValid: Bool {
       let name = newAccountName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -31,6 +36,11 @@ struct ClaudeAccountsFeature {
     case loading
     case loaded(ClaudeAuthStatus)
     case failed(String)
+  }
+
+  struct UsageSnapshot: Equatable, Sendable {
+    var usage: ClaudeUsage?
+    var fetchedAt: Date
   }
 
   enum MCPSyncState: Equatable, Sendable {
@@ -71,6 +81,8 @@ struct ClaudeAccountsFeature {
     case tick
     case refreshStatuses
     case statusLoaded(ClaudeAccountID, Result<ClaudeAuthStatus, Error>)
+    case refreshUsage(ClaudeAccountID)
+    case usageLoaded(ClaudeAccountID, Result<ClaudeUsage, Error>)
     case addAccountButtonTapped
     case addAccountCancelled
     case addAccountConfirmed
@@ -90,6 +102,9 @@ struct ClaudeAccountsFeature {
     case syncMCPServersButtonTapped
     case mcpSyncCompleted(Result<ClaudeMCPServerSync.Servers, Error>)
     case newTabRequested(ClaudeAccountID, Worktree)
+    /// Restart a tab under another account; nil targets the selected tab.
+    case restartTabRequested(ClaudeAccountID, Worktree, tabID: TabID?)
+    case restartTabAlert(PresentationAction<RestartTabAlert>)
     case alert(PresentationAction<Alert>)
   }
 
@@ -99,11 +114,15 @@ struct ClaudeAccountsFeature {
 
   /// How often statuses, reminders and the MCP sync re-run in the background.
   nonisolated static let refreshInterval: Duration = .seconds(30 * 60)
+  /// Minimum gap between two usage requests for the same account, however often
+  /// Settings is opened: the endpoint rate-limits.
+  nonisolated static let usageMinimumInterval: TimeInterval = 60
   /// Minimum gap between two reminders about the same account.
   nonisolated static let reminderInterval: TimeInterval = 24 * 60 * 60
 
   private nonisolated enum CancelID: Hashable, Sendable {
     case periodicRefresh
+    case usage(ClaudeAccountID)
     case login
     case mcpSync
   }
@@ -114,6 +133,7 @@ struct ClaudeAccountsFeature {
   @Dependency(\.continuousClock) private var clock
   @Dependency(\.date.now) private var now
   @Dependency(\.uuid) private var uuid
+  @Dependency(\.defaultAppStorage) private var defaultAppStorage
 
   var body: some Reducer<State, Action> {
     BindingReducer()
@@ -123,6 +143,10 @@ struct ClaudeAccountsFeature {
         return .none
 
       case .task:
+        // Tab assignments outlive their tabs; drop the ones no saved layout holds.
+        if case .file(let layouts) = LayoutsFile.readPersisted(from: defaultAppStorage) {
+          state.$file.withLock { _ = $0.pruneTabAssignments(toTabsIn: layouts) }
+        }
         let accounts = state.file.accounts
         return .merge(
           // Re-link on every launch: Claude Code replacing a linked file with a
@@ -166,7 +190,33 @@ struct ClaudeAccountsFeature {
         if status.loggedIn, !state.file.loggedInAccountIDs.contains(id) {
           state.$file.withLock { _ = $0.loggedInAccountIDs.insert(id) }
         }
-        return remindIfNeeded(state: &state, accountID: id, status: status)
+        let reminder = remindIfNeeded(state: &state, accountID: id, status: status)
+        guard status.loggedIn else {
+          // Another login may come next; never show its predecessor's numbers.
+          state.usages[id] = nil
+          return .merge(reminder, .cancel(id: CancelID.usage(id)))
+        }
+        return .merge(reminder, .send(.refreshUsage(id)))
+
+      case .refreshUsage(let id):
+        guard let account = state.file.account(id: id) else { return .none }
+        if let last = state.usages[id]?.fetchedAt, now.timeIntervalSince(last) < Self.usageMinimumInterval {
+          return .none
+        }
+        // Stamped up front so a burst of refreshes sends one request.
+        state.usages[id, default: UsageSnapshot(usage: nil, fetchedAt: now)].fetchedAt = now
+        return .run { [client] send in
+          await send(.usageLoaded(id, Result { try await client.usage(account) }))
+        }
+        .cancellable(id: CancelID.usage(id), cancelInFlight: true)
+
+      case .usageLoaded(let id, .success(let usage)):
+        guard state.file.account(id: id) != nil else { return .none }
+        state.usages[id] = UsageSnapshot(usage: usage, fetchedAt: now)
+        return .none
+
+      case .usageLoaded:
+        return .none
 
       case .statusLoaded(let id, .failure(let error)):
         state.statuses[id] = .failed(error.localizedDescription)
@@ -240,6 +290,7 @@ struct ClaudeAccountsFeature {
         guard let account = state.file.account(id: id) else { return .none }
         state.$file.withLock { $0.removeAccount(id) }
         state.statuses[id] = nil
+        state.usages[id] = nil
         return .run { [client] _ in
           try? await client.logout(account)
         }
@@ -359,6 +410,12 @@ struct ClaudeAccountsFeature {
         return .run { [terminalClient] _ in
           await terminalClient.send(.createTab(worktree, runSetupScriptIfNew: false, id: tabID))
         }
+
+      case .restartTabRequested(let accountID, let worktree, let tabID):
+        return reduceRestartTabRequested(&state, accountID: accountID, worktree: worktree, tabID: tabID)
+
+      case .restartTabAlert(let action):
+        return reduceRestartTabAlert(&state, action: action)
       }
     }
   }

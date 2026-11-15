@@ -448,6 +448,8 @@ final class WorktreeTerminalManager {
       }
       sendLayout(worktree.id, .closeTab(id: owningTab))
       emit(.tabRemoved(worktreeID: worktree.id, tabID: owningTab))
+    case .restartTab(let worktree, let tabID, let resume):
+      restartTab(in: worktree, tabID: tabID, resume: resume)
     default:
       return false
     }
@@ -505,6 +507,8 @@ final class WorktreeTerminalManager {
       .splitFocusedPane, .focusSplit, .toggleSplitZoom, .equalizeSplits,
       .splitPane, .focusPane, .closePane, .toggleZoomPane, .toggleWindowModeForPane, .moveTabToSplit:
       return false
+    case .restartTab:
+      return false
     }
     return true
   }
@@ -547,6 +551,8 @@ final class WorktreeTerminalManager {
       .focusSurface, .splitSurface, .destroyTab, .destroySurface, .renameTab, .prune, .removeWorktreeLayout,
       .setNotificationsEnabled, .enforceNotificationRetentionLimit, .setSelectedWorktreeID, .beginTabRename,
       .setTerminalHibernationEnabled, .toggleWindowModeForFocusedPane:
+      return false
+    case .restartTab:
       return false
     }
     return true
@@ -598,6 +604,8 @@ final class WorktreeTerminalManager {
       .splitSurface, .destroyTab, .destroySurface, .renameTab, .beginTabRename,
       .splitFocusedPane, .focusSplit, .toggleSplitZoom, .equalizeSplits,
       .splitPane, .focusPane, .closePane, .toggleZoomPane, .toggleWindowModeForPane, .moveTabToSplit:
+      assertionFailure("Unhandled terminal command reached management handler: \(command)")
+    case .restartTab:
       assertionFailure("Unhandled terminal command reached management handler: \(command)")
     }
   }

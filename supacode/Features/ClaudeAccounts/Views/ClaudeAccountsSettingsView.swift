@@ -17,6 +17,7 @@ struct ClaudeAccountsSettingsView: View {
           ClaudeAccountRow(
             account: account,
             status: store.statuses[account.id],
+            usage: store.usages[account.id]?.usage,
             isDefault: store.file.defaultAccountID == account.id,
             onLogin: { store.send(.loginButtonTapped(account.id)) },
             onLogout: { store.send(.logoutButtonTapped(account.id)) },
@@ -131,6 +132,7 @@ struct ClaudeAccountsSettingsView: View {
 private struct ClaudeAccountRow: View {
   let account: ClaudeAccount
   let status: ClaudeAccountsFeature.StatusEntry?
+  let usage: ClaudeUsage?
   let isDefault: Bool
   let onLogin: () -> Void
   let onLogout: () -> Void
@@ -168,6 +170,9 @@ private struct ClaudeAccountRow: View {
           .foregroundStyle(.secondary)
           .textSelection(.enabled)
         ClaudeAccountStatusView(status: status)
+        if let usage {
+          ClaudeAccountUsageView(usage: usage)
+        }
       }
       Spacer()
       if case .loaded(let status) = status, status.loggedIn, status.health(now: Date()) == .loggedIn {

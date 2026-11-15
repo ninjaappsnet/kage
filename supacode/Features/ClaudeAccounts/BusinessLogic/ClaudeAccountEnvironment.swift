@@ -23,17 +23,49 @@ nonisolated enum ClaudeAccountEnvironment {
     return [ClaudeAccount.configDirectoryVariable: directory]
   }
 
-  /// Reads the persisted choices; the surface factory's entry point.
+  /// The surface factory's entry point. A tab or split opened from a live surface
+  /// takes that surface's account and keeps it as the tab's own assignment, so it
+  /// survives a relaunch; everything else resolves as `variables(tabID:...)` does.
   @MainActor
-  static func variables(tabID: UUID?, worktree: Worktree?) -> [String: String] {
-    guard let worktree else { return [:] }
-    @SharedReader(.claudeAccountsFile) var file
-    return variables(
+  static func variables(request: ContentRequest, worktree: Worktree?) -> [String: String] {
+    guard let worktree, worktree.localWorkingDirectory != nil else { return [:] }
+    @Shared(.claudeAccountsFile) var file
+    let tabID = request.tabID.rawValue
+    let requested = request.origin == .tab ? ClaudeSurfaceAccounts.takeRequestedAccount() : nil
+    if let inherited = inheritedAccountID(
       tabID: tabID,
-      repositoryRootURL: worktree.repositoryRootURL,
-      isRemote: worktree.localWorkingDirectory == nil,
-      file: file
+      origin: request.origin,
+      inheritedFrom: request.inheritedFrom?.rawValue,
+      requested: requested,
+      file: file,
+      surfaceAccounts: ClaudeSurfaceAccounts.byContentID
+    ) {
+      $file.withLock { $0.tabAccountIDs[tabID.uuidString] = inherited }
+    }
+    let account = file.resolvedAccount(
+      tabID: tabID,
+      repositoryRootPath: normalizedPath(worktree.repositoryRootURL.path(percentEncoded: false))
     )
+    ClaudeSurfaceAccounts.byContentID[request.contentID.rawValue] = account.id
+    guard let directory = account.configDirectoryPath else { return [:] }
+    return [ClaudeAccount.configDirectoryVariable: directory]
+  }
+
+  /// The account a new tab or split takes: the one explicitly `requested` from the
+  /// tab strip menu, else the account of the surface it was opened from. Nil when
+  /// the tab has its own assignment, is a restore, or the account is unknown or gone.
+  static func inheritedAccountID(
+    tabID: UUID,
+    origin: ContentOrigin,
+    inheritedFrom: UUID?,
+    requested: ClaudeAccountID? = nil,
+    file: ClaudeAccountsFile,
+    surfaceAccounts: [UUID: ClaudeAccountID]
+  ) -> ClaudeAccountID? {
+    guard origin != .restored, file.tabAccountIDs[tabID.uuidString] == nil else { return nil }
+    let accountID = requested ?? inheritedFrom.flatMap { surfaceAccounts[$0] }
+    guard let accountID, file.account(id: accountID) != nil else { return nil }
+    return accountID
   }
 
   /// One spelling per path, whichever side (Settings list, live worktree, a
@@ -44,5 +76,32 @@ nonisolated enum ClaudeAccountEnvironment {
     var normalized = URL(filePath: path).standardizedFileURL.path(percentEncoded: false)
     while normalized.count > 1, normalized.hasSuffix("/") { normalized.removeLast() }
     return normalized
+  }
+}
+
+/// The account each surface built this launch started under, by content id. In
+/// memory only: after a relaunch, restored surfaces record themselves again as
+/// they are rebuilt.
+@MainActor
+enum ClaudeSurfaceAccounts {
+  static var byContentID: [UUID: ClaudeAccountID] = [:]
+
+  /// How long a tab strip request waits for its tab. The tab is built within a
+  /// run loop turn or two; a request that outlives this was for a tab that never
+  /// came, and must not land on an unrelated one later.
+  static let requestLifetime: Duration = .seconds(5)
+
+  private static var requested: (accountID: ClaudeAccountID, at: ContinuousClock.Instant)?
+
+  /// Makes the next new tab start under `accountID`; see `takeRequestedAccount`.
+  static func requestAccountForNextTab(_ accountID: ClaudeAccountID) {
+    requested = (accountID, .now)
+  }
+
+  /// The pending request, consumed, if it is still fresh.
+  static func takeRequestedAccount(now: ContinuousClock.Instant = .now) -> ClaudeAccountID? {
+    defer { requested = nil }
+    guard let requested, now - requested.at <= requestLifetime else { return nil }
+    return requested.accountID
   }
 }

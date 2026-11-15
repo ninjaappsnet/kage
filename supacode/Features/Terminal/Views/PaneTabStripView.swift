@@ -676,6 +676,7 @@ private struct PaneTabView: View {
     Button("Close All") {
       store.send(.contentRequestedClose(content: tab.content.id, scope: .allTabs))
     }
+    ClaudeAccountRestartTabMenu(tab: tab)
   }
 
   private func requestClose() {
@@ -969,6 +970,7 @@ private struct PaneTabStripNewTabControl: View {
         action: newTab
       )
       Menu {
+        ClaudeAccountNewTabMenuSection(newTab: newTab)
         ForEach(TerminalSplitMenuDirection.allCases, id: \.self) { direction in
           Button(direction.title, systemImage: direction.systemImage) {
             split(direction)

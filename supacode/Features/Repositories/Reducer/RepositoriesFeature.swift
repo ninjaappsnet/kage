@@ -388,6 +388,8 @@ struct RepositoriesFeature {
     case requestEditRemoteRepository(Repository.ID)
     case remoteConnectionForm(PresentationAction<RemoteConnectionFormFeature.Action>)
     case requestCloneRepository
+    case openHomeTerminal
+    case homeTerminalLoaded(URL)
     case cloneRepositoryForm(PresentationAction<CloneRepositoryFormFeature.Action>)
     case removeRemoteRepository(Repository.ID)
     /// Kick off async SSH resolution of every persisted remote config; streams
@@ -3875,6 +3877,10 @@ struct RepositoriesFeature {
         // runs before the delegate handler nils the presented state.
         return .none
 
+      case .openHomeTerminal, .homeTerminalLoaded:
+        // Handled by `homeTerminalReducer`.
+        return .none
+
       case .removeRemoteRepository(let repositoryID):
         state.resolvedForgeByRepositoryID.removeValue(forKey: repositoryID)
         @Shared(.remoteRepositoryRoots) var remoteRepositoryRoots
@@ -5095,6 +5101,7 @@ struct RepositoriesFeature {
       .ifLet(\.$cloneRepositoryForm, action: \.cloneRepositoryForm) {
         CloneRepositoryFormFeature()
       }
+    Self.homeTerminalReducer
     nestedFolderPromptReducer
       .ifLet(\.$nestedFolderPrompt, action: \.nestedFolderPrompt) {
         NestedFolderPromptFeature()
