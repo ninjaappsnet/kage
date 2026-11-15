@@ -167,6 +167,9 @@ private struct SettingsSidebarView: View {
       Label("Claude Accounts", systemImage: "person.2")
         .appFont(.body)
         .tag(SettingsSection.claudeAccounts)
+      Label("Sync", systemImage: "arrow.triangle.2.circlepath")
+        .appFont(.body)
+        .tag(SettingsSection.dotfilesSync)
       if UpstreamLicensingAvailability.isEnabled {
         Label("License", systemImage: "key")
           .appFont(.body)
@@ -216,6 +219,7 @@ private struct SettingsDetailView: View {
   let updatesStore: StoreOf<UpdatesFeature>
   let licenseStore: StoreOf<LicenseFeature>
   let claudeAccountsStore: StoreOf<ClaudeAccountsFeature>
+  let dotfilesSyncStore: StoreOf<DotfilesSyncFeature>
   @Environment(GhosttyShortcutManager.self) private var ghosttyShortcuts: GhosttyShortcutManager?
 
   var body: some View {
@@ -238,6 +242,8 @@ private struct SettingsDetailView: View {
       KeyboardShortcutsSettingsView(store: settingsStore)
     case .license:
       LicenseSettingsView(store: licenseStore)
+    case .dotfilesSync:
+      DotfilesSyncSettingsView(store: dotfilesSyncStore)
     case .claudeAccounts:
       ClaudeAccountsSettingsView(
         store: claudeAccountsStore,
@@ -334,7 +340,8 @@ struct SettingsView: View {
         settingsStore: settingsStore,
         updatesStore: updatesStore,
         licenseStore: store.scope(state: \.license, action: \.license),
-        claudeAccountsStore: store.scope(state: \.claudeAccounts, action: \.claudeAccounts)
+        claudeAccountsStore: store.scope(state: \.claudeAccounts, action: \.claudeAccounts),
+        dotfilesSyncStore: store.scope(state: \.dotfilesSync, action: \.dotfilesSync)
       )
     }
     .toolbar {
