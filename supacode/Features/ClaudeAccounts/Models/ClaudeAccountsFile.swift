@@ -80,6 +80,19 @@ nonisolated struct ClaudeAccountsFile: Codable, Equatable, Sendable {
     let live = Set(liveTabIDs.map(\.uuidString))
     tabAccountIDs = tabAccountIDs.filter { live.contains($0.key) }
   }
+
+  /// Forgets assignments for tabs no persisted layout holds any more. Skipped
+  /// (returns false) when the layouts file lost entries in decoding: a tab it
+  /// dropped may still be restored by a later build that can read it.
+  @discardableResult
+  mutating func pruneTabAssignments(toTabsIn layouts: LayoutsFile) -> Bool {
+    guard layouts.undecodedEntryCount == 0 else { return false }
+    let live = layouts.worktrees.values.flatMap { record in
+      record.layout.panes.flatMap { pane in pane.tabs.map(\.id.rawValue) }
+    }
+    pruneTabAssignments(keeping: Set(live))
+    return true
+  }
 }
 
 nonisolated extension SupacodePaths {

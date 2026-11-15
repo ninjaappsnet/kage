@@ -13,11 +13,23 @@ struct ClaudeAccountCommands: Commands {
         let worktree = store.repositories.worktree(for: store.repositories.selectedWorktreeID)
         Menu("New Tab with Claude Account") {
           ForEach(accounts) { account in
-            Button(account.name) {
+            Button(store.claudeAccounts.menuTitle(for: account)) {
               guard let worktree else { return }
               store.send(.claudeAccounts(.newTabRequested(account.id, worktree)))
             }
             .help("Open a terminal tab where claude runs as \(account.name)")
+          }
+        }
+        .disabled(worktree == nil || worktree?.isMissing == true || worktree?.localWorkingDirectory == nil)
+        // Acts on the selected tab, resolved when chosen: reading the layout here
+        // would rebuild the menu on every layout change, so no current-account check.
+        Menu("Restart Tab with Claude Account") {
+          ForEach(accounts) { account in
+            Button(store.claudeAccounts.menuTitle(for: account)) {
+              guard let worktree else { return }
+              store.send(.claudeAccounts(.restartTabRequested(account.id, worktree, tabID: nil)))
+            }
+            .help("End the selected tab's session and start a new one where claude runs as \(account.name)")
           }
         }
         .disabled(worktree == nil || worktree?.isMissing == true || worktree?.localWorkingDirectory == nil)
