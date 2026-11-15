@@ -35,18 +35,28 @@ struct DotfilesSyncSettingsView: View {
       }
 
       Section("Status") {
-        LabeledContent("Last sync") {
-          HStack(spacing: 8) {
-            if store.isSyncing {
-              ProgressView().controlSize(.small)
-              Text("Syncing…")
-            } else if let date = store.lastSyncedAt {
-              Text(date.formatted(.relative(presentation: .named)))
-            } else {
-              Text("Never")
+        if store.isSyncing, let progress = store.progress {
+          VStack(alignment: .leading, spacing: 4) {
+            ProgressView(value: progress.fraction)
+              .progressViewStyle(.linear)
+              .accessibilityLabel("Sync progress")
+              .accessibilityValue("\(Int(progress.fraction * 100))%")
+            HStack {
+              Text(progress.message)
+                .lineLimit(1)
+                .truncationMode(.middle)
+              Spacer()
+              Text("\(Int(progress.fraction * 100))%")
+                .monospacedDigit()
             }
+            .font(.callout)
+            .foregroundStyle(.secondary)
           }
-          .foregroundStyle(.secondary)
+        } else {
+          LabeledContent("Last sync") {
+            Text(store.lastSyncedAt.map { $0.formatted(.relative(presentation: .named)) } ?? "Never")
+              .foregroundStyle(.secondary)
+          }
         }
         if let error = store.lastError {
           Text(error)
@@ -70,6 +80,37 @@ struct DotfilesSyncSettingsView: View {
           }
           .disabled(!FileManager.default.fileExists(atPath: SupacodePaths.dotfilesConflictsDirectory.path))
           .help("Open the other Macs' copies of files that could not be merged")
+        }
+      }
+
+      if !store.conflicts.isEmpty {
+        Section {
+          ForEach(store.conflicts) { conflict in
+            DotfilesVersionConflictRow(
+              conflict: conflict,
+              keepLocal: { store.send(.choose(unit: conflict.unit, .keepLocal)) },
+              useSynced: { store.send(.choose(unit: conflict.unit, .useRepository)) }
+            )
+          }
+        } header: {
+          HStack {
+            Text("Choose which version to keep")
+            Spacer()
+            Button("Keep All This Mac's") { store.send(.chooseAll(.keepLocal)) }
+              .help("This Mac's copies replace the synced ones on every Mac")
+            Button("Use All Synced") { store.send(.chooseAll(.useRepository)) }
+              .help("The synced copies replace this Mac's; this Mac's are saved in Conflicts → replaced")
+          }
+          .buttonStyle(.borderless)
+        } footer: {
+          Text(
+            """
+            These differ between this Mac and the others and are not merged automatically \
+            (only Claude memory and JSON settings are). Until you choose, each stays as it is here.
+            """
+          )
+          .font(.callout)
+          .foregroundStyle(.secondary)
         }
       }
 
@@ -146,5 +187,48 @@ private struct DotfilesSyncReportView: View {
   private var summary: String {
     "Sent \(report.exported.count), received \(report.imported.count), removed \(report.deletedLocally.count)"
       + (report.pushed ? ", pushed." : ".")
+  }
+}
+
+private struct DotfilesVersionConflictRow: View {
+  let conflict: DotfilesVersionConflict
+  let keepLocal: () -> Void
+  let useSynced: () -> Void
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(conflict.name)
+        Text(detail)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      }
+      Spacer()
+      Button("Compare", action: compare)
+        .help("Show this Mac's copy and the synced copy in Finder")
+      Button("Keep This Mac's", action: keepLocal)
+        .help("This Mac's copy replaces the synced one on every Mac")
+      Button("Use Synced", action: useSynced)
+        .help("The synced copy replaces this Mac's; this Mac's is saved in Conflicts → replaced")
+    }
+  }
+
+  private var detail: String {
+    let files = conflict.paths.count == 1 ? "1 file differs" : "\(conflict.paths.count) files differ"
+    return "\(conflict.origin) · \(files)"
+  }
+
+  private func compare() {
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    let roots = DotfilesSyncRoot.defaults(
+      kageConfigPath: DotfilesSyncClient.relativePath(of: SupacodePaths.configBaseDirectory, to: home)
+    )
+    let urls = [
+      DotfilesSyncRoot.localURL(forRepoPath: conflict.unit, home: home, roots: roots),
+      SupacodePaths.dotfilesRepositoryDirectory.appending(path: conflict.unit),
+    ]
+    NSWorkspace.shared.activateFileViewerSelecting(
+      urls.compactMap { $0 }.filter { FileManager.default.fileExists(atPath: $0.path) }
+    )
   }
 }

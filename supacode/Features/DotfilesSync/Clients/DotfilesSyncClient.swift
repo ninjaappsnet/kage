@@ -4,11 +4,16 @@ import SupacodeSettingsShared
 
 /// Runs one sync pass against the given remote.
 nonisolated struct DotfilesSyncClient: Sendable {
-  var sync: @Sendable (_ remoteURL: String) async throws -> DotfilesSyncReport
+  var sync:
+    @Sendable (
+      _ remoteURL: String,
+      _ choices: [String: DotfilesVersionChoice],
+      _ progress: @escaping @Sendable (DotfilesSyncProgress) async -> Void
+    ) async throws -> DotfilesSyncReport
 }
 
 extension DotfilesSyncClient: DependencyKey {
-  static let liveValue = Self { remoteURL in
+  static let liveValue = Self { remoteURL, choices, progress in
     @Dependency(RepositoryPersistenceClient.self) var persistence
     let roots = await persistence.loadRoots().map { URL(fileURLWithPath: $0) }
     let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
@@ -25,13 +30,15 @@ extension DotfilesSyncClient: DependencyKey {
         gitNetwork: { arguments, directory in try await DotfilesGitProcess.runNetwork(arguments, in: directory) },
         resolveText: { path, base, ours, theirs in
           await DotfilesClaudeMerge.resolve(path: path, base: base, ours: ours, theirs: theirs)
-        }
+        },
+        versionChoices: choices,
+        progress: progress
       )
     )
     return try await engine.sync()
   }
 
-  static let testValue = Self { _ in DotfilesSyncReport() }
+  static let testValue = Self { _, _, _ in DotfilesSyncReport() }
 
   /// `.config/kage` for a config folder inside home; nil when it lives elsewhere
   /// (an absolute `XDG_CONFIG_HOME`), which then isn't synced.

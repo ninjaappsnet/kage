@@ -50,6 +50,15 @@ nonisolated struct DotfilesSyncRoot: Equatable, Sendable {
   /// Larger files are skipped: this is for settings and notes, not assets.
   static let maximumFileSize = 1_000_000
 
+  /// Where a repository path lives under `home` (memory paths excluded).
+  static func localURL(forRepoPath repoPath: String, home: URL, roots: [Self]) -> URL? {
+    for root in roots where repoPath == root.repoPrefix || repoPath.hasPrefix(root.repoPrefix + "/") {
+      let relative = repoPath.dropFirst(root.repoPrefix.count).trimmingPrefix("/")
+      return home.appending(path: root.localPath).appending(path: String(relative))
+    }
+    return nil
+  }
+
   static func isExcluded(name: String) -> Bool {
     excludedNames.contains(name) || excludedSuffixes.contains { name.hasSuffix($0) }
   }

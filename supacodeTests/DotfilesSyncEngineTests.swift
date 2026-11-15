@@ -1,3 +1,4 @@
+import ConcurrencyExtras
 import Foundation
 import Testing
 
@@ -49,6 +50,8 @@ struct DotfilesSyncEngineTests {
   private func engine(
     _ name: String,
     knownRoots: [URL] = [],
+    progress: LockIsolated<[DotfilesSyncProgress]>? = nil,
+    choices: [String: DotfilesVersionChoice] = [:],
     resolveText: @escaping @Sendable (String, String?, String, String) async -> String? = { _, _, _, _ in nil }
   ) -> DotfilesSyncEngine {
     let home = home(name)
@@ -63,7 +66,9 @@ struct DotfilesSyncEngineTests {
         machineName: name,
         git: { arguments, directory in try Self.runGit(arguments, in: directory) },
         gitNetwork: { arguments, directory in try Self.runGit(arguments, in: directory) },
-        resolveText: resolveText
+        resolveText: resolveText,
+        versionChoices: choices,
+        progress: { update in progress?.withValue { $0.append(update) } }
       )
     )
   }
@@ -167,35 +172,6 @@ struct DotfilesSyncEngineTests {
     }
   }
 
-  @Test func clashingTextGoesToTheResolverThenFallsBackToLocal() async throws {
-    let alice = home("alice")
-    let bob = home("bob")
-    try write("line\n", ".claude/CLAUDE.md", in: alice)
-    _ = try await engine("alice").sync()
-    _ = try await engine("bob").sync()
-    try write("alice line\n", ".claude/CLAUDE.md", in: alice)
-    try write("bob line\n", ".claude/CLAUDE.md", in: bob)
-    _ = try await engine("alice").sync()
-
-    let resolved = try await engine(
-      "bob",
-      resolveText: { _, base, ours, theirs in
-        #expect(base == "line\n")
-        return ours + theirs
-      }
-    ).sync()
-    #expect(resolved.resolvedByClaude == ["claude/CLAUDE.md"])
-    #expect(read(".claude/CLAUDE.md", in: bob) == "bob line\nalice line\n")
-
-    try write("alice again\n", ".claude/CLAUDE.md", in: alice)
-    try write("bob again\n", ".claude/CLAUDE.md", in: bob)
-    _ = try await engine("alice").sync()
-    let unresolved = try await engine("bob").sync()
-    #expect(unresolved.unresolved == ["claude/CLAUDE.md"])
-    #expect(read(".claude/CLAUDE.md", in: bob) == "bob again\n")
-    #expect(read(".kage/dotfiles-conflicts/claude/CLAUDE.md", in: bob) == "alice again\n")
-  }
-
   @Test func filesWithSecretsStayLocal() async throws {
     let alice = home("alice")
     try write(
@@ -218,6 +194,156 @@ struct DotfilesSyncEngineTests {
     #expect(
       try DotfilesJSONMerge.Value.parse(data)
         == DotfilesJSONMerge.Value.parse(Data(#"{"permissions": {"allow": ["B", "A"]}}"#.utf8)))
+  }
+
+  @Test func anInterruptedPassLeavesNothingBehindInTheClone() async throws {
+    let alice = home("alice")
+    try write("# Rules\n", ".claude/CLAUDE.md", in: alice)
+    _ = try await engine("alice").sync()
+    // A pass killed mid-export: a half-written file sits in the clone.
+    try write("half written\n", ".kage/dotfiles/claude/stray.md", in: alice)
+    _ = try await engine("alice").sync()
+    #expect((try? Self.runGit(["show", "main:claude/stray.md"], in: remote)) == nil)
+  }
+
+  @Test func clashingMemoryGoesToTheResolverThenFallsBackToLocal() async throws {
+    let alice = home("alice")
+    let bob = home("bob")
+    let aliceProject = try project(at: "code/proj", in: alice, memory: "line\n")
+    let bobProject = try project(at: "work/proj", in: bob)
+    _ = try await engine("alice", knownRoots: [aliceProject]).sync()
+    _ = try await engine("bob", knownRoots: [bobProject]).sync()
+    try write("alice line\n", memoryPath(for: aliceProject), in: alice)
+    try write("bob line\n", memoryPath(for: bobProject), in: bob)
+    _ = try await engine("alice", knownRoots: [aliceProject]).sync()
+
+    let resolved = try await engine(
+      "bob", knownRoots: [bobProject],
+      resolveText: { _, base, ours, theirs in
+        #expect(base == "line\n")
+        return ours + theirs
+      }
+    ).sync()
+    let memoryFile = "claude-memory/github.com/owner/proj/MEMORY.md"
+    #expect(resolved.resolvedByClaude == [memoryFile])
+    #expect(read(memoryPath(for: bobProject), in: bob) == "bob line\nalice line\n")
+
+    try write("alice again\n", memoryPath(for: aliceProject), in: alice)
+    try write("bob again\n", memoryPath(for: bobProject), in: bob)
+    _ = try await engine("alice", knownRoots: [aliceProject]).sync()
+    let unresolved = try await engine("bob", knownRoots: [bobProject]).sync()
+    #expect(unresolved.unresolved == [memoryFile])
+    #expect(read(memoryPath(for: bobProject), in: bob) == "bob again\n")
+    #expect(read(".kage/dotfiles-conflicts/\(memoryFile)", in: bob) == "alice again\n")
+  }
+
+  @Test func clashingNonMemoryTextWaitsForTheUsersChoice() async throws {
+    let alice = home("alice")
+    let bob = home("bob")
+    try write("line\n", ".claude/CLAUDE.md", in: alice)
+    _ = try await engine("alice").sync()
+    _ = try await engine("bob").sync()
+    try write("alice line\n", ".claude/CLAUDE.md", in: alice)
+    try write("bob line\n", ".claude/CLAUDE.md", in: bob)
+    _ = try await engine("alice").sync()
+
+    let calls = LockIsolated(0)
+    let held = try await engine(
+      "bob",
+      resolveText: { _, _, ours, _ in
+        calls.withValue { $0 += 1 }
+        return ours
+      }
+    ).sync()
+    #expect(calls.value == 0)
+    #expect(held.versionConflicts == [DotfilesVersionConflict(unit: "claude/CLAUDE.md", paths: ["claude/CLAUDE.md"])])
+    #expect(read(".claude/CLAUDE.md", in: bob) == "bob line\n")
+    // Still waiting on the next pass, and nothing moves either way.
+    let again = try await engine("bob").sync()
+    #expect(again.versionConflicts.map(\.unit) == ["claude/CLAUDE.md"])
+    _ = try await engine("alice").sync()
+    #expect(read(".claude/CLAUDE.md", in: alice) == "alice line\n")
+
+    let chosen = try await engine("bob", choices: ["claude/CLAUDE.md": .keepLocal]).sync()
+    #expect(chosen.resolvedChoices == ["claude/CLAUDE.md"])
+    #expect(chosen.versionConflicts.isEmpty)
+    _ = try await engine("alice").sync()
+    #expect(read(".claude/CLAUDE.md", in: alice) == "bob line\n")
+  }
+
+  @Test func differingSkillsOnAFirstPassAreOneChoicePerFolder() async throws {
+    let alice = home("alice")
+    let bob = home("bob")
+    try write("version 2\n", ".agents/skills/tool/SKILL.md", in: alice)
+    try write("new in 2\n", ".agents/skills/tool/references/extra.md", in: alice)
+    _ = try await engine("alice").sync()
+    try write("version 1\n", ".agents/skills/tool/SKILL.md", in: bob)
+    try write("only in 1\n", ".agents/skills/tool/old.md", in: bob)
+
+    let held = try await engine("bob").sync()
+    #expect(held.versionConflicts.map(\.unit) == ["agents/skills/tool"])
+    #expect(held.versionConflicts.first?.paths.count == 3)
+    #expect(read(".agents/skills/tool/SKILL.md", in: bob) == "version 1\n")
+    #expect(read(".agents/skills/tool/references/extra.md", in: bob) == nil)
+
+    let chosen = try await engine("bob", choices: ["agents/skills/tool": .useRepository]).sync()
+    #expect(chosen.resolvedChoices == ["agents/skills/tool"])
+    #expect(read(".agents/skills/tool/SKILL.md", in: bob) == "version 2\n")
+    #expect(read(".agents/skills/tool/references/extra.md", in: bob) == "new in 2\n")
+    #expect(read(".agents/skills/tool/old.md", in: bob) == nil)
+    #expect(read(".kage/dotfiles-conflicts/replaced/agents/skills/tool/SKILL.md", in: bob) == "version 1\n")
+    #expect(read(".kage/dotfiles-conflicts/replaced/agents/skills/tool/old.md", in: bob) == "only in 1\n")
+    let stored = try Self.runGit(["show", "main:agents/skills/tool/SKILL.md"], in: remote)
+    #expect(String(bytes: stored, encoding: .utf8) == "version 2\n")
+  }
+
+  @Test func keepingThisMacsSkillReplacesTheSyncedFolder() async throws {
+    let alice = home("alice")
+    let bob = home("bob")
+    try write("version 2\n", ".agents/skills/tool/SKILL.md", in: alice)
+    try write("new in 2\n", ".agents/skills/tool/extra.md", in: alice)
+    _ = try await engine("alice").sync()
+    try write("version 1\n", ".agents/skills/tool/SKILL.md", in: bob)
+    _ = try await engine("bob").sync()
+    _ = try await engine("bob", choices: ["agents/skills/tool": .keepLocal]).sync()
+    _ = try await engine("alice").sync()
+    #expect(read(".agents/skills/tool/SKILL.md", in: alice) == "version 1\n")
+    #expect(read(".agents/skills/tool/extra.md", in: alice) == nil)
+  }
+
+  @Test func modelMergesArePerPassCappedAndProgressReachesTheEnd() async throws {
+    let alice = home("alice")
+    let bob = home("bob")
+    let count = DotfilesSyncEngine.maximumModelMergesPerPass + 2
+    let aliceProject = try project(at: "code/proj", in: alice)
+    let bobProject = try project(at: "work/proj", in: bob)
+    let memoryFolder: (URL) -> String = { root in
+      ".claude/projects/\(DotfilesProjectIdentity.claudeProjectDirectoryName(for: root.path))/memory"
+    }
+    for index in 0..<count { try write("line\n", "\(memoryFolder(aliceProject))/n\(index).md", in: alice) }
+    _ = try await engine("alice", knownRoots: [aliceProject]).sync()
+    _ = try await engine("bob", knownRoots: [bobProject]).sync()
+    for index in 0..<count {
+      try write("alice \(index)\n", "\(memoryFolder(aliceProject))/n\(index).md", in: alice)
+      try write("bob \(index)\n", "\(memoryFolder(bobProject))/n\(index).md", in: bob)
+    }
+    _ = try await engine("alice", knownRoots: [aliceProject]).sync()
+    let calls = LockIsolated(0)
+    let progress = LockIsolated<[DotfilesSyncProgress]>([])
+    let report = try await engine(
+      "bob", knownRoots: [bobProject], progress: progress,
+      resolveText: { _, _, ours, theirs in
+        calls.withValue { $0 += 1 }
+        return ours + theirs
+      }
+    ).sync()
+    #expect(calls.value == DotfilesSyncEngine.maximumModelMergesPerPass)
+    #expect(report.resolvedByClaude.count == DotfilesSyncEngine.maximumModelMergesPerPass)
+    #expect(report.unresolved.count == 2)
+    let fractions = progress.value.map(\.fraction)
+    #expect(fractions == fractions.sorted())
+    #expect(fractions.last == 1)
+    #expect(progress.value.contains { $0.message.hasPrefix("Merging claude-memory/") })
   }
 
   @Test func symlinkedSkillsStayLinks() async throws {
