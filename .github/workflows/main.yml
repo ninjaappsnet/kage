@@ -145,6 +145,10 @@ jobs:
               echo "DEVELOPER_ID_IDENTITY_SHA=$DEVELOPER_ID_IDENTITY_SHA" >> "$GITHUB_ENV"
       - name: Archive workspace
         run: make archive
+      # signingCertificate takes the SHA-1 of the identity imported into build.keychain,
+      # not its name. The runner's login keychain can hold a different certificate with
+      # the same "Developer ID Application: …" name; selecting by name let the export
+      # pick that one, whose key is locked in the runner session (errSecInternalComponent).
       - run: |
           cat > build/ExportOptions.plist <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -156,7 +160,7 @@ jobs:
             <key>signingStyle</key>
             <string>manual</string>
             <key>signingCertificate</key>
-          <string>$DEVELOPER_ID_IDENTITY</string>
+          <string>$DEVELOPER_ID_IDENTITY_SHA</string>
             <key>teamID</key>
             <string>$APPLE_TEAM_ID</string>
           </dict>

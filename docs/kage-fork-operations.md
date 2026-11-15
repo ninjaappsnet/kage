@@ -128,6 +128,12 @@ Consequences that are not obvious from the workflow files:
   never cancel a release build that already holds it.
 - **The runner group must allow public repositories.** kage is public; without
   that checkbox, jobs queue forever while the runners still display as Idle.
+- **Select the signing identity by SHA-1, never by name.** The runner's login
+  keychain holds its own `Developer ID Application: …` certificate under the same
+  name as the CI secret's. A name lookup can resolve to that copy, whose key the
+  runner session cannot use, and codesign fails with `errSecInternalComponent`
+  (v1.0.0's export broke this way). Use `$DEVELOPER_ID_IDENTITY_SHA`, which
+  `Setup keychain` reads from `build.keychain`.
 - **The runner host needs a full Xcode** with a macOS 26+ SDK (license accepted,
   first launch run, Metal Toolchain installed). Since the Zig 0.16 bump no
   specific Xcode version is required. Verify the whole set there with `make doctor`.
