@@ -84,7 +84,10 @@ nonisolated enum ClaudeAccountEnvironment {
 /// they are rebuilt.
 @MainActor
 enum ClaudeSurfaceAccounts {
-  static var byContentID: [UUID: ClaudeAccountID] = [:]
+  static var byContentID: [UUID: ClaudeAccountID] {
+    get { ClaudeSurfaceAccountRegistry.shared.accountIDs }
+    set { ClaudeSurfaceAccountRegistry.shared.accountIDs = newValue }
+  }
 
   /// How long a tab strip request waits for its tab. The tab is built within a
   /// run loop turn or two; a request that outlives this was for a tab that never
@@ -104,4 +107,17 @@ enum ClaudeSurfaceAccounts {
     guard let requested, now - requested.at <= requestLifetime else { return nil }
     return requested.accountID
   }
+}
+
+/// Observable storage behind `ClaudeSurfaceAccounts.byContentID`, so a tab's
+/// account tag appears once its surface is built. Written only at surface
+/// creation, so observing the whole map costs nothing in steady state.
+@MainActor
+@Observable
+final class ClaudeSurfaceAccountRegistry {
+  static let shared = ClaudeSurfaceAccountRegistry()
+
+  var accountIDs: [UUID: ClaudeAccountID] = [:]
+
+  nonisolated deinit {}
 }

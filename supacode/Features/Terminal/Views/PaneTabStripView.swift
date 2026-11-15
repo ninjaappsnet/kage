@@ -735,6 +735,7 @@ private struct PaneTabLabelView: View {
         isShimmering: isShimmering
       )
       .equatable()
+      ClaudeAccountTabTag(contentID: tab.content.id.rawValue)
       Spacer(minLength: TerminalTabBarMetrics.contentTrailingSpacing)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
