@@ -22,6 +22,10 @@ nonisolated struct DotfilesSyncReport: Equatable, Sendable {
   var unresolved: [String] = []
   /// JSON keys both sides changed differently; the local value was kept.
   var jsonConflicts: [String] = []
+  /// Skills and files whose copies differ, held back until the user picks a side.
+  var versionConflicts: [DotfilesVersionConflict] = []
+  /// Units (skill folders, files) the user's choice was applied to in this pass.
+  var resolvedChoices: [String] = []
 }
 
 /// One sync pass between the machine's home folder and its clone of the user's
@@ -54,7 +58,15 @@ actor DotfilesSyncEngine {
     var gitNetwork: @Sendable (_ arguments: [String], _ directory: URL) async throws -> Void
     /// Merges two edited copies of a text file; nil when it can't.
     var resolveText: @Sendable (_ path: String, _ base: String?, _ ours: String, _ theirs: String) async -> String?
+    /// The user's pick for skill folders in conflict, applied in this pass.
+    var versionChoices: [String: DotfilesVersionChoice] = [:]
+    /// What the pass is doing, for the status line and progress bar.
+    var progress: @Sendable (_ progress: DotfilesSyncProgress) async -> Void = { _ in }
   }
+
+  /// `claude -p` takes seconds per file; past this many in one pass, the rest
+  /// keep the local copy (remote saved aside) instead of stalling the pass.
+  static let maximumModelMergesPerPass = 10
 
   enum Entry: Equatable, Sendable {
     case file(Data, executable: Bool)
@@ -75,10 +87,23 @@ actor DotfilesSyncEngine {
     var synced: [String: String] = [:]
     /// Claude project folder name → project key, so transcripts are read once.
     var memoryKeys: [String: String] = [:]
+    /// Units waiting for the user's choice; neither side is synced.
+    var pendingChoices: Set<String> = []
+
+    init() {}
+
+    init(from decoder: any Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      synced = try container.decodeIfPresent([String: String].self, forKey: .synced) ?? [:]
+      memoryKeys = try container.decodeIfPresent([String: String].self, forKey: .memoryKeys) ?? [:]
+      pendingChoices = try container.decodeIfPresent(Set<String>.self, forKey: .pendingChoices) ?? []
+    }
   }
 
   private let env: Environment
   private let fileManager = FileManager.default
+  private var modelMerges = 0
+  private var fraction = 0.0
 
   init(environment: Environment) {
     self.env = environment
@@ -93,38 +118,117 @@ actor DotfilesSyncEngine {
     var local: [String: Entry]
     /// Paths held back because they look like they contain a secret.
     var blocked: Set<String> = []
+    /// Units waiting for the user's choice (carried over and new).
+    var pendingChoices: Set<String>
     var report = DotfilesSyncReport()
+
+    /// A unit is held back unless the user has decided about it.
+    func isHeld(_ path: String, choices: [String: DotfilesVersionChoice]) -> Bool {
+      guard let folder = DotfilesConflictUnit.unit(of: path), pendingChoices.contains(folder) else { return false }
+      return choices[folder] == nil
+    }
   }
 
   func sync() async throws -> DotfilesSyncReport {
+    modelMerges = 0
+    await progress("Preparing…", 0.02)
     try await ensureRepository()
     let previous = loadState()
     var state = previous ?? State()
     let targets = Targets(env: env, memoryDirectories: await memoryDirectoriesByKey(state: &state))
-    var pass = Pass(targets: targets, local: try await snapshotLocal(targets: targets))
+    await progress("Collecting files…", 0.08)
+    var pass = Pass(
+      targets: targets,
+      local: try await snapshotLocal(targets: targets),
+      pendingChoices: state.pendingChoices
+    )
 
     try await export(&pass, previous: previous)
+    await progress("Committing…", 0.42)
     try await commitAll(message: "Sync from \(env.machineName)")
 
     let beforeMerge = try snapshotRepository()
+    await progress("Fetching…", 0.45)
     if try await fetchRemote() {
-      try await mergeRemote(report: &pass.report)
+      try await mergeRemote(&pass)
     }
     let merged = try snapshotRepository()
     try await importChanges(&pass, beforeMerge: beforeMerge, merged: merged)
 
+    await progress("Pushing…", 0.97)
     pass.report.pushed = try await pushIfAhead()
+    finishChoices(&pass, merged: merged)
+    state.pendingChoices = pass.pendingChoices
     state.synced = pass.local.reduce(into: [:]) { result, item in
       if merged[item.key] == item.value { result[item.key] = item.value.digest }
     }
     saveState(state)
+    await progress("Done", 1)
     return pass.report
+  }
+
+  private func progress(_ message: String, _ value: Double? = nil) async {
+    if let value { fraction = max(fraction, min(value, 1)) }
+    await env.progress(DotfilesSyncProgress(message: message, fraction: fraction))
+  }
+
+  /// Reports one step of a loop over `count` items spanning `range`, at most
+  /// about fifty times per loop.
+  private func progress(_ message: String, step index: Int, of count: Int, in range: ClosedRange<Double>) async {
+    let stride = max(1, count / 50)
+    guard index % stride == 0 || index == count - 1 else { return }
+    let share = count > 0 ? Double(index + 1) / Double(count) : 1
+    await progress(message, range.lowerBound + (range.upperBound - range.lowerBound) * share)
+  }
+
+  /// Units that differ on a machine's first pass: present on both sides with
+  /// any file added, removed or changed.
+  private func differingChoiceUnits(local: [String: Entry], tracked: [String: Entry]) -> Set<String> {
+    var localFolders: [String: [String: Entry]] = [:]
+    var trackedFolders: [String: [String: Entry]] = [:]
+    for (path, entry) in local {
+      if let folder = DotfilesConflictUnit.unit(of: path) { localFolders[folder, default: [:]][path] = entry }
+    }
+    for (path, entry) in tracked {
+      if let folder = DotfilesConflictUnit.unit(of: path) { trackedFolders[folder, default: [:]][path] = entry }
+    }
+    return Set(
+      localFolders.compactMap { folder, entries in
+        guard let other = trackedFolders[folder], other != entries else { return nil }
+        return folder
+      })
+  }
+
+  /// Drops units a choice was applied to and lists those still waiting.
+  private func finishChoices(_ pass: inout Pass, merged: [String: Entry]) {
+    for folder in pass.pendingChoices.sorted() {
+      if env.versionChoices[folder] != nil {
+        pass.pendingChoices.remove(folder)
+        pass.report.resolvedChoices.append(folder)
+        continue
+      }
+      let paths = Set(pass.local.keys).union(merged.keys)
+        .filter { DotfilesConflictUnit.unit(of: $0) == folder && pass.local[$0] != merged[$0] }
+        .sorted()
+      if paths.isEmpty {
+        pass.pendingChoices.remove(folder)
+      } else {
+        pass.report.versionConflicts.append(DotfilesVersionConflict(unit: folder, paths: paths))
+      }
+    }
   }
 
   /// Copies local changes and deletions into the clone.
   private func export(_ pass: inout Pass, previous: State?) async throws {
     let tracked = try snapshotRepository()
-    for (path, entry) in pass.local.sorted(by: { $0.key < $1.key }) where tracked[path] != entry {
+    if previous == nil {
+      pass.pendingChoices.formUnion(differingChoiceUnits(local: pass.local, tracked: tracked))
+    }
+    let changed = pass.local.sorted(by: { $0.key < $1.key }).filter { tracked[$0.key] != $0.value }
+    for (index, (path, entry)) in changed.enumerated() {
+      await progress("Sending changes…", step: index, of: changed.count, in: 0.10...0.40)
+      if pass.isHeld(path, choices: env.versionChoices) { continue }
+      if let folder = DotfilesConflictUnit.unit(of: path), env.versionChoices[folder] == .useRepository { continue }
       if case .file(let data, _) = entry, let text = String(data: data, encoding: .utf8),
         DotfilesSecretScanner.containsSecret(text)
       {
@@ -133,20 +237,27 @@ actor DotfilesSyncEngine {
         continue
       }
       var outgoing = entry
-      if previous == nil, let existing = tracked[path] {
+      let isChosen = DotfilesConflictUnit.unit(of: path).map { env.versionChoices[$0] != nil } ?? false
+      if previous == nil, !isChosen, let existing = tracked[path] {
         // First pass on this machine and the repository already has its own
-        // copy: merge the two instead of letting either side win.
+        // copy (everything but memory and JSON was set aside above): JSON
+        // merges key by key, memory goes to the model merge, capped per pass.
         outgoing = await merge(path: path, base: nil, ours: entry, theirs: existing, report: &pass.report)
         if outgoing != entry {
           try write(outgoing, to: pass.targets.localURL(for: path))
           pass.local[path] = outgoing
         }
+        if outgoing == existing { continue }
       }
       try write(outgoing, to: env.repository.appending(path: path))
       pass.report.exported.append(path)
     }
-    guard let previous else { return }
-    for path in previous.synced.keys.sorted() where pass.local[path] == nil && tracked[path] != nil {
+    let keepLocal = Set(env.versionChoices.filter { $0.value == .keepLocal }.keys)
+    for (path, _) in tracked where pass.local[path] == nil {
+      // Choosing this machine's copy also removes files only the other copy has.
+      let chosen = DotfilesConflictUnit.unit(of: path).map { keepLocal.contains($0) } ?? false
+      let deletedHere = previous?.synced[path] != nil
+      guard chosen || deletedHere, !pass.isHeld(path, choices: env.versionChoices) else { continue }
       guard pass.targets.localURL(for: path) != nil, !Self.isNestedMarker(path) else { continue }
       try? fileManager.removeItem(at: env.repository.appending(path: path))
       pass.report.exported.append(path)
@@ -155,8 +266,13 @@ actor DotfilesSyncEngine {
 
   /// Copies what the merge brought in back home, and removes what it deleted.
   private func importChanges(_ pass: inout Pass, beforeMerge: [String: Entry], merged: [String: Entry]) async throws {
-    for (path, entry) in merged.sorted(by: { $0.key < $1.key })
-    where pass.local[path] != entry && !pass.blocked.contains(path) {
+    let useRepository = Set(env.versionChoices.filter { $0.value == .useRepository }.keys)
+    let incoming = merged.sorted(by: { $0.key < $1.key }).filter {
+      pass.local[$0.key] != $0.value && !pass.blocked.contains($0.key)
+        && !pass.isHeld($0.key, choices: env.versionChoices)
+    }
+    for (index, (path, entry)) in incoming.enumerated() {
+      await progress("Receiving changes…", step: index, of: incoming.count, in: 0.78...0.95)
       guard let target = pass.targets.localURL(for: path) else { continue }
       // Edited again while this pass ran: the next pass exports it.
       guard currentEntry(at: target, repoPath: path) == pass.local[path] else { continue }
@@ -164,13 +280,25 @@ actor DotfilesSyncEngine {
         if try await cloneNestedRepository(entry, marker: target) { pass.report.imported.append(path) }
         continue
       }
+      if let folder = DotfilesConflictUnit.unit(of: path), useRepository.contains(folder),
+        let previous = pass.local[path]
+      {
+        try? write(previous, to: env.conflictsDirectory.appending(path: "replaced").appending(path: path))
+      }
       try write(entry, to: target)
       pass.local[path] = entry
       pass.report.imported.append(path)
     }
-    for (path, entry) in beforeMerge
-    where merged[path] == nil && pass.local[path] == entry && !pass.blocked.contains(path) {
-      guard let target = pass.targets.localURL(for: path), !Self.isNestedMarker(path) else { continue }
+    for (path, entry) in pass.local.sorted(by: { $0.key < $1.key }) where merged[path] == nil {
+      guard let target = pass.targets.localURL(for: path), !Self.isNestedMarker(path),
+        !pass.blocked.contains(path), !pass.isHeld(path, choices: env.versionChoices)
+      else { continue }
+      let isReplaced = DotfilesConflictUnit.unit(of: path).map { useRepository.contains($0) } ?? false
+      if isReplaced {
+        try? write(entry, to: env.conflictsDirectory.appending(path: "replaced").appending(path: path))
+      } else if beforeMerge[path] != entry {
+        continue
+      }
       try? fileManager.removeItem(at: target)
       pass.local[path] = nil
       pass.report.deletedLocally.append(path)
@@ -194,15 +322,27 @@ actor DotfilesSyncEngine {
   }
 
   private func ensureRepository() async throws {
-    defer {
-      // JSON never goes through git's line merge, which can produce valid-looking
-      // but broken JSON: it always conflicts, and `DotfilesJSONMerge` takes over.
-      let attributes = env.repository.appending(path: ".gitattributes")
-      if !fileManager.fileExists(atPath: attributes.path) {
-        try? Data("*.json -merge\n".utf8).write(to: attributes)
+    if fileManager.fileExists(atPath: env.repository.appending(path: ".git").path) {
+      // The clone only ever holds what a pass wrote: a pass that was killed
+      // midway (quit, crash) leaves half-written files or a half-done merge,
+      // which must not be committed by the next one. Commits are kept.
+      if await succeeds(["rev-parse", "--verify", "-q", "HEAD"]) {
+        _ = try await git(["reset", "-q", "--hard", "HEAD"])
+        _ = try await git(["clean", "-q", "-f", "-d"])
       }
+    } else {
+      try await cloneRepository()
     }
-    guard !fileManager.fileExists(atPath: env.repository.appending(path: ".git").path) else { return }
+    // JSON never goes through git's line merge, which can produce valid-looking
+    // but broken JSON: it always conflicts, and `DotfilesJSONMerge` takes over.
+    let attributes = env.repository.appending(path: ".gitattributes")
+    if !fileManager.fileExists(atPath: attributes.path) {
+      try Data("*.json -merge\n".utf8).write(to: attributes)
+    }
+  }
+
+  private func cloneRepository() async throws {
+    await progress("Cloning the repository…", 0.03)
     let parent = env.repository.deletingLastPathComponent()
     try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
     try await env.gitNetwork(["clone", env.remoteURL, env.repository.path], parent)
@@ -249,7 +389,7 @@ actor DotfilesSyncEngine {
     return await succeeds(["rev-parse", "--verify", "-q", "refs/remotes/origin/main"])
   }
 
-  private func mergeRemote(report: inout DotfilesSyncReport) async throws {
+  private func mergeRemote(_ pass: inout Pass) async throws {
     guard await succeeds(["rev-parse", "--verify", "-q", "HEAD"]) else {
       _ = try await git(["reset", "-q", "--hard", "origin/main"])
       return
@@ -261,15 +401,29 @@ actor DotfilesSyncEngine {
       let conflicted = try await git(["diff", "--name-only", "--diff-filter=U"])
         .split(separator: "\n").map(String.init).filter { !$0.isEmpty }
       guard !conflicted.isEmpty else { throw error }
-      for path in conflicted {
+      for (index, path) in conflicted.enumerated() {
+        await progress("Merging…", step: index, of: conflicted.count, in: 0.50...0.75)
         let base = await stage(1, path)
         let ours = await stage(2, path)
         let theirs = await stage(3, path)
         let file = env.repository.appending(path: path)
         switch (ours, theirs) {
         case (let ours?, let theirs?):
-          let merged = await merge(path: path, base: base, ours: ours, theirs: theirs, report: &report)
-          try write(merged, to: file)
+          guard let unit = DotfilesConflictUnit.unit(of: path) else {
+            let merged = await merge(path: path, base: base, ours: ours, theirs: theirs, report: &pass.report)
+            try write(merged, to: file)
+            break
+          }
+          switch env.versionChoices[unit] {
+          case .keepLocal: try write(ours, to: file)
+          case .useRepository: try write(theirs, to: file)
+          case nil:
+            // Both machines changed something that isn't merged automatically:
+            // take theirs into the repository for now and hold the unit (this
+            // machine's copy untouched) until the user picks a side.
+            try write(theirs, to: file)
+            pass.pendingChoices.insert(unit)
+          }
         case (let kept?, nil), (nil, let kept?):
           // Edited on one side, deleted on the other: keep the edit.
           try write(kept, to: file)
@@ -320,7 +474,11 @@ actor DotfilesSyncEngine {
       }
       return ours
     }
-    if let mine = String(data: ourData, encoding: .utf8), let other = String(data: theirData, encoding: .utf8) {
+    if modelMerges < Self.maximumModelMergesPerPass,
+      let mine = String(data: ourData, encoding: .utf8), let other = String(data: theirData, encoding: .utf8)
+    {
+      modelMerges += 1
+      await progress("Merging \(path) with Claude…")
       let original = baseData.flatMap { String(data: $0, encoding: .utf8) }
       if let merged = await env.resolveText(path, original, mine, other),
         DotfilesConflictResolver.isAcceptable(merged, ours: mine, theirs: other),
