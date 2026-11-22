@@ -20,6 +20,19 @@ upstream is marked `KAGE PATCH` in the source and listed here.
    accumulate into one `AttributedString`; only an inline image splits it, and the segments are
    joined as a balanced tree. Covered by `supacodeTests/MarkdownPreviewDeepParagraphTests.swift`.
 
+2. **Chunked content for lazy layout** (`Sources/MarkdownUI/KageChunking.swift`, new file).
+   `Markdown` lays a whole document out eagerly in one `VStack`; dayfolio's 2.9 MB `docs/plan.md`
+   took ~15 s of main-thread layout before the first frame. `MarkdownContent.chunked(maxCharacters:)`
+   splits content between top-level blocks (and between items of an oversized list, keeping a
+   numbered list's numbering), and each `MarkdownChunk` carries the margins the basic theme collapses
+   at its join. Kage's `MarkdownPreview` stacks the chunks in a `LazyVStack` with
+   `markdownChunkSpacing(_:)`. The margins mirror `Theme.basic` and MarkdownUI's max-of-descendants
+   `BlockMarginsPreference`: change the theme and the chunker's `margins(of:)` must follow. Known
+   gap: a split list's slices only see their own items' margins, which differs from the whole list
+   only when an item nests a heading or a thematic break. Covered by
+   `supacodeTests/MarkdownChunkingTests.swift` and `MarkdownPreviewChunkParityTests.swift` (stacked
+   chunk heights equal the whole document's).
+
 ## Bumping
 
 Re-copy `Sources/MarkdownUI` (minus `Documentation.docc`) from the new tag, re-apply each patch
