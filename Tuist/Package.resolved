@@ -1,5 +1,5 @@
 {
-  "originHash" : "3bbae9c53b8fa6d183a601cf76315c0d595c3428e04220eb385964c9f1cec522",
+  "originHash" : "da5f3bcad127ad3aba1deeeeece33a26c17e6b85b2e421f51fa25d9dea3787f0",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -152,15 +152,6 @@
       "state" : {
         "revision" : "322d9ffeeba85c9f7c4984b39422ec7cc3c56597",
         "version" : "1.1.1"
-      }
-    },
-    {
-      "identity" : "swift-markdown-ui",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/gonzalezreal/swift-markdown-ui",
-      "state" : {
-        "revision" : "5f613358148239d0292c0cef674a3c2314737f9e",
-        "version" : "2.4.1"
       }
     },
     {
