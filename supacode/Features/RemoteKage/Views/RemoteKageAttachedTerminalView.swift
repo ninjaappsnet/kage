@@ -7,6 +7,8 @@ struct RemoteKageAttachedTerminalView: View {
   let host: RemoteKageHost
   let zmxPath: String
   let session: String
+  /// Called when the remote side ends the attach (detach key, session ended).
+  var onExit: () -> Void = {}
 
   var body: some View {
     ContentUnavailableView("Attaching isn't available yet", systemImage: "terminal")
