@@ -668,6 +668,7 @@ struct SupacodeApp: App {
           .appChromeTextSize(store.settings.chromeTextSize)
           .background { GlobalHotkeyInstaller(monitor: globalHotkeyMonitor) }
           .environment(\.claudeAccountsStore, store.scope(state: \.claudeAccounts, action: \.claudeAccounts))
+          .environment(\.remoteKageGhosttyRuntime, ghostty)
           .claudeAccountRestartTabAlert(store: store.scope(state: \.claudeAccounts, action: \.claudeAccounts))
       }
       .openSettingsOnSelection(store: store)
