@@ -511,6 +511,8 @@ struct SupacodeApp: App {
       handleWorktreeAppearanceQuery(params: params, repos: repos, clientFD: clientFD, store: store)
     case "scripts":
       handleScriptsQuery(params: params, repos: repos, clientFD: clientFD, store: store)
+    case "host-snapshot":
+      HostSnapshotRuntime.respond(clientFD: clientFD, store: store)
     default:
       AgentHookSocketServer.sendCommandResponse(
         clientFD: clientFD, ok: false, error: "Unknown resource: \(resource)")
