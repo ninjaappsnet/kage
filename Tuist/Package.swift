@@ -35,7 +35,8 @@ let package = Package(
     .package(url: "https://github.com/apple/swift-collections", exact: "1.3.0"),
     .package(url: "https://github.com/raspu/Highlightr", exact: "2.3.0"),
     .package(url: "https://github.com/onevcat/Kingfisher.git", exact: "8.8.0"),
-    .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", exact: "2.4.1"),
+    // Vendored 2.4.1 carrying a stack-overflow fix; see ThirdParty/swift-markdown-ui/KAGE-PATCHES.md.
+    .package(path: "../ThirdParty/swift-markdown-ui"),
     .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.64.6"),
     .package(url: "https://github.com/getsentry/sentry-cocoa/", exact: "9.3.0"),
     .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.0-beta.2"),

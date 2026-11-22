@@ -1,0 +1,2 @@
+# Tuist generates the package project in place for a local path package.
+*.xcodeproj/

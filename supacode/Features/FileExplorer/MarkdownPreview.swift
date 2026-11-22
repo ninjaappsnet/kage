@@ -6,17 +6,28 @@ import SwiftUI
 /// Rendered markdown for the viewer's "Rendered" mode. Uses MarkdownUI with a
 /// Highlightr-backed code-block highlighter so fenced code in the document is
 /// syntax-colored to match the standalone code editor.
+///
+/// The document is laid out lazily in chunks (`MarkdownContent.chunked`, a Kage
+/// patch to the vendored MarkdownUI): one `Markdown` view over a 2.9 MB file
+/// spent ~15 s laying out every block before the first frame. The chunks carry
+/// the margins of their joins, so the result looks the same as one view.
 struct MarkdownPreview: View {
   let markdown: String
   @Environment(\.colorScheme) private var colorScheme
+  @State private var chunks = MarkdownPreviewChunks()
 
   var body: some View {
     ScrollView {
-      Markdown(markdown)
-        .markdownCodeSyntaxHighlighter(.highlightr(dark: colorScheme == .dark))
-        .textSelection(.enabled)
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+      LazyVStack(alignment: .leading, spacing: 0) {
+        ForEach(Array(chunks.chunks(for: markdown).enumerated()), id: \.offset) { _, chunk in
+          Markdown(chunk.content)
+            .markdownChunkSpacing(chunk)
+        }
+      }
+      .markdownCodeSyntaxHighlighter(.highlightr(dark: colorScheme == .dark))
+      .textSelection(.enabled)
+      .padding(16)
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
   }
 }
