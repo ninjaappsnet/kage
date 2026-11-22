@@ -5994,7 +5994,9 @@ struct RepositoriesFeature {
       shouldPruneArchivedWorktreeIDs
       ? state.pruneArchivedWorktreeIDs(availableWorktreeIDs: availableWorktreeIDs)
       : false
-    if !state.isShowingArchivedWorktrees, !state.isSelectionValid(state.selectedWorktreeID) {
+    if !state.isShowingArchivedWorktrees, !state.isShowingRemoteKage,
+      !state.isSelectionValid(state.selectedWorktreeID)
+    {
       state.selection = nil
     }
     if state.shouldRestoreLastFocusedWorktree {
@@ -6179,6 +6181,9 @@ extension RepositoriesFeature.State {
     }
     if case .failedRepository(let id) = selection {
       return [.failedRepository(id)]
+    }
+    if case .remoteKage(let remote) = selection {
+      return [.remoteKage(remote)]
     }
     var selections = Set(sidebarSelectedWorktreeIDs.map(SidebarSelection.worktree))
     if let selectedWorktreeID {
@@ -7127,6 +7132,10 @@ extension RepositoriesFeature.State {
   ) -> Effect<RepositoriesFeature.Action> {
     let previousSelection = selectedWorktreeID
     let previousSelectedWorktree = worktree(for: previousSelection)
+
+    if let remote = RemoteKageSidebarSelection.remoteSelection(in: selections, current: selection) {
+      return selectRemoteKage(remote)
+    }
 
     guard !selections.contains(.archivedWorktrees) else {
       selection = .archivedWorktrees

@@ -45,6 +45,8 @@ enum WindowTitle {
         fallback: fallback
       )
       return format(repo: name, tab: "Unavailable")
+    case .remoteKage:
+      return appName
     case .none:
       return appName
     }

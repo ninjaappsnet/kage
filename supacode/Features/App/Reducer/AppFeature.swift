@@ -550,7 +550,7 @@ struct AppFeature {
           // Selecting the archived list must NOT overwrite the last
           // focused live worktree — preserve `focusedWorktreeID` so
           // returning from archives restores the prior row.
-          if !state.repositories.isShowingArchivedWorktrees {
+          if !state.repositories.isShowingArchivedWorktrees, !state.repositories.isShowingRemoteKage {
             state.repositories.$sidebar.withLock { sidebar in
               sidebar.focusedWorktreeID = lastFocusedWorktreeID
             }
@@ -2178,6 +2178,7 @@ struct AppFeature {
     Scope(state: \.remoteKage, action: \.remoteKage) {
       RemoteKageFeature()
     }
+    RemoteKageSelectionSync()
     Scope(state: \.dotfilesSync, action: \.dotfilesSync) {
       DotfilesSyncFeature()
     }

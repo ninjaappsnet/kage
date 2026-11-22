@@ -325,6 +325,11 @@ struct WorktreeDetailView: View {
         MultiSelectedWorktreesDetailView(rows: selectedWorktreeSummaries)
       } else if let loadingInfo {
         WorktreeLoadingView(info: loadingInfo)
+      } else if let remoteKageSelection = repositories.selection?.remoteKageSelection {
+        RemoteKageWorktreeView(
+          store: store.scope(state: \.remoteKage, action: \.remoteKage),
+          selection: remoteKageSelection
+        )
       } else if let failedRepositoryID = repositories.selectedFailedRepositoryID {
         FailedRepositoryDetailView(
           repositoryID: failedRepositoryID,
