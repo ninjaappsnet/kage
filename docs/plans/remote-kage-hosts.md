@@ -1,6 +1,6 @@
 # Remote Kage hosts
 
-Status: planned 2026-11-22 (branch `feat/remote-kage-hosts`). Not started.
+Status: built 2026-11-22 on `feat/remote-kage-hosts` (phases 1–8, merged to `main`), shipping in 1.3.0. See "Outcome" at the end.
 
 ## Goal
 
@@ -141,3 +141,22 @@ separate: here the remote Mac runs its own Kage, and this Mac is a viewer.
 - `WorktreeMenuSnapshot.swift`: one arm if the exhaustive switch needs it.
 
 Everything else lives in `supacode/Features/RemoteKage/`.
+
+## Outcome (2026-11-22)
+
+- All phases built test-first by five parallel slices (snapshot, settings,
+  polling, sidebar, attach), merged into `feat/remote-kage-hosts`, then `main`.
+  Full `make test` green (4661 tests), `make check` and `make build-app` green.
+- Checked against the mini at component level: `zmx history --screen` and
+  `zmx send` quoting (throwaway sessions), the old CLI's `host snapshot` error
+  classifies as needsUpdate, attach in a temporary in-app harness (typing,
+  resize, real ctrl+\\ detaches, unmount detaches, missing session is not
+  recreated, killed ssh master reconnects). Not yet exercised end to end in
+  the shipped UI; the mini needs 1.3.0 first.
+- Two-viewer resize (resolved): zmx 0.8.1 has one leader client, the one that
+  last sent keyboard input; only its size applies. Our view shows the session
+  at the mini's size until the first keystroke here, then the mini's window
+  follows ours. Accepted for v1; a later fix needs a zmx patch letting focus-in
+  claim leadership, shipped on the host too.
+- ctrl+\\ (resolved): a real key press detaches; text sent via `sendText`
+  does not, because bash wraps it in bracketed paste.
