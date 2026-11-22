@@ -1,46 +1,82 @@
 import Foundation
 
 nonisolated struct CLIInstaller {
-  private static let installPath = "/usr/local/bin/supacode"
+  static let installDirectory = "/usr/local/bin"
+  /// The CLI's names: `supacode` stays for upstream script/hook compatibility,
+  /// `kage` is the fork's own. The bundle ships both under `Resources/bin`.
+  static let linkNames = ["supacode", "kage"]
 
-  /// Returns the path to the CLI binary inside the app bundle.
-  static var bundledCLIPath: String? {
+  /// Returns the directory holding the CLI binaries inside the app bundle.
+  static var bundledBinDirectory: String? {
     Bundle.main.resourceURL?
-      .appending(path: "bin/supacode", directoryHint: .notDirectory)
+      .appending(path: "bin", directoryHint: .isDirectory)
       .path(percentEncoded: false)
   }
 
-  func isInstalled() -> Bool {
-    guard let bundledPath = Self.bundledCLIPath else { return false }
-    guard let dest = try? FileManager.default.destinationOfSymbolicLink(atPath: Self.installPath) else {
-      return false
+  /// Returns the path to the CLI binary inside the app bundle.
+  static var bundledCLIPath: String? {
+    bundledBinDirectory.map { "\($0)/supacode" }
+  }
+
+  /// The names whose link in `installDirectory` points at this bundle.
+  /// `resolve` reads a symlink's destination (injected for tests).
+  static func linkedNames(
+    bundleBin: String,
+    installDirectory: String,
+    resolve: (String) -> String?
+  ) -> [String] {
+    linkNames.filter { resolve("\(installDirectory)/\($0)") == "\(bundleBin)/\($0)" }
+  }
+
+  /// Installed means every name is linked: an install that predates the `kage`
+  /// alias reports false so the Install button offers to add it.
+  static func isInstalled(linkedNames: [String]) -> Bool {
+    Set(linkedNames) == Set(linkNames)
+  }
+
+  static func installCommand(bundleBin: String, installDirectory: String) -> String {
+    let links = linkNames.map { name in
+      let destination = shellEscape("\(installDirectory)/\(name)")
+      return "rm -f \(destination) && ln -s \(shellEscape("\(bundleBin)/\(name)")) \(destination)"
     }
-    return dest == bundledPath
+    return (["mkdir -p \(shellEscape(installDirectory))"] + links).joined(separator: " && ")
+  }
+
+  static func uninstallCommand(names: [String], installDirectory: String) -> String {
+    "rm -f " + names.map { shellEscape("\(installDirectory)/\($0)") }.joined(separator: " ")
+  }
+
+  private func linkedNames() -> [String] {
+    guard let bundleBin = Self.bundledBinDirectory else { return [] }
+    return Self.linkedNames(bundleBin: bundleBin, installDirectory: Self.installDirectory) {
+      try? FileManager.default.destinationOfSymbolicLink(atPath: $0)
+    }
+  }
+
+  func isInstalled() -> Bool {
+    Self.isInstalled(linkedNames: linkedNames())
   }
 
   func install() throws {
-    guard let bundledPath = Self.bundledCLIPath else {
+    guard let bundleBin = Self.bundledBinDirectory else {
       throw CLIInstallerError.bundledBinaryNotFound
     }
-    guard FileManager.default.fileExists(atPath: bundledPath) else {
+    guard Self.linkNames.allSatisfy({ FileManager.default.fileExists(atPath: "\(bundleBin)/\($0)") }) else {
       throw CLIInstallerError.bundledBinaryNotFound
     }
 
-    // Use NSAppleScript to create the symlink with admin privileges.
-    let dir = shellEscape(
-      URL(filePath: Self.installPath).deletingLastPathComponent().path(percentEncoded: false))
-    let dst = shellEscape(Self.installPath)
-    let src = shellEscape(bundledPath)
+    // Use NSAppleScript to create the symlinks with admin privileges.
     try runPrivileged(
-      "mkdir -p \(dir) && rm -f \(dst) && ln -s \(src) \(dst)",
+      Self.installCommand(bundleBin: bundleBin, installDirectory: Self.installDirectory),
       prompt: "Kage needs administrator access to install the CLI to /usr/local/bin."
     )
   }
 
   func uninstall() throws {
-    guard isInstalled() else { return }
+    let names = linkedNames()
+    guard !names.isEmpty else { return }
     try runPrivileged(
-      "rm -f \(shellEscape(Self.installPath))",
+      Self.uninstallCommand(names: names, installDirectory: Self.installDirectory),
       prompt: "Kage needs administrator access to uninstall the CLI from /usr/local/bin."
     )
   }
