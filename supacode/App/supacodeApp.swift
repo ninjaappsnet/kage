@@ -511,6 +511,8 @@ struct SupacodeApp: App {
       handleWorktreeAppearanceQuery(params: params, repos: repos, clientFD: clientFD, store: store)
     case "scripts":
       handleScriptsQuery(params: params, repos: repos, clientFD: clientFD, store: store)
+    case "host-snapshot":
+      HostSnapshotRuntime.respond(clientFD: clientFD, store: store)
     default:
       AgentHookSocketServer.sendCommandResponse(
         clientFD: clientFD, ok: false, error: "Unknown resource: \(resource)")
@@ -666,6 +668,7 @@ struct SupacodeApp: App {
           .appChromeTextSize(store.settings.chromeTextSize)
           .background { GlobalHotkeyInstaller(monitor: globalHotkeyMonitor) }
           .environment(\.claudeAccountsStore, store.scope(state: \.claudeAccounts, action: \.claudeAccounts))
+          .environment(\.remoteKageGhosttyRuntime, ghostty)
           .claudeAccountRestartTabAlert(store: store.scope(state: \.claudeAccounts, action: \.claudeAccounts))
       }
       .openSettingsOnSelection(store: store)

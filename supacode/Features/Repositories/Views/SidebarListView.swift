@@ -18,6 +18,7 @@ struct SidebarListView: View {
   @Shared(.sidebarGroupActiveRows) private var groupActiveRows: Bool
   @Shared(.sidebarNestWorktreesByBranch) private var nestWorktreesByBranch: Bool
   @Shared(.sidebarSectionSort) private var sectionSort: SidebarSectionSort
+  @Environment(\.remoteKageStore) private var remoteKageStore
 
   var body: some View {
     let state = store.state
@@ -58,6 +59,9 @@ struct SidebarListView: View {
                 structure: structure
               )
             } : nil)
+        if let remoteKageStore {
+          RemoteKageSidebarSections(store: remoteKageStore)
+        }
       }
       .listStyle(.sidebar)
       .focused($isSidebarFocused)

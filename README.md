@@ -43,6 +43,21 @@ menu (**Move to Workspace**), then switch with the picker above the sidebar to h
 **All Projects** is the default and filters nothing. Each workspace remembers its own last
 selection, and a repo added while a filter is active joins that workspace automatically.
 
+### Remote Kage hosts
+
+See and drive the coding agents that Kage runs on your other Macs. Add each Mac in **Settings →
+Remote Hosts** with a friendly name, a username (defaults to yours) and its DNS name or IP (a
+Tailscale MagicDNS name works). Kage asks each host's own Kage for its projects over SSH every few
+seconds and shows them in the sidebar, one section per host, grouped by that host's workspaces.
+Rows carry live agent badges, and you get a notification when a remote agent starts waiting for
+you.
+
+Open a remote tab to attach to its running session as a full terminal: read the output, type
+prompts. Closing the tab, or pressing **ctrl+\\**, detaches; the session keeps running on the host.
+Simple prompts can be answered without attaching, and you can open a new tab on the host. Every
+host must run a Kage build that answers `kage host snapshot` (1.3 or later). Needs key-based SSH
+access to the host.
+
 ### No telemetry
 
 The analytics and crash-reporting SDKs are unlinked in this fork. Kage phones home only for Sparkle

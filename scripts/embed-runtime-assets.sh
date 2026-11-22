@@ -52,3 +52,5 @@ chmod +x "${zmx_destination_dir}/zmx"
 /bin/cp -f "${light_theme_source}" "${destination_root}/Supacode Light"
 /bin/cp -f "${dark_theme_source}" "${destination_root}/Supacode Dark"
 /bin/cp -f "${cli_source}" "${bin_destination_dir}/supacode"
+# `kage` is a second name for the same CLI; its help text follows argv[0].
+ln -sf supacode "${bin_destination_dir}/kage"

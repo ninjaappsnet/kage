@@ -93,6 +93,7 @@ struct AppFeature {
     var updates = UpdatesFeature.State()
     var license = LicenseFeature.State()
     var claudeAccounts = ClaudeAccountsFeature.State()
+    var remoteKage = RemoteKageFeature.State()
     var dotfilesSync = DotfilesSyncFeature.State()
     var commandPalette = CommandPaletteFeature.State()
     /// Terminal-orchestration state. Owns the per-tab feature collection so
@@ -297,6 +298,7 @@ struct AppFeature {
     case settings(SettingsFeature.Action)
     case license(LicenseFeature.Action)
     case claudeAccounts(ClaudeAccountsFeature.Action)
+    case remoteKage(RemoteKageFeature.Action)
     case dotfilesSync(DotfilesSyncFeature.Action)
     case updates(UpdatesFeature.Action)
     case commandPalette(CommandPaletteFeature.Action)
@@ -410,6 +412,7 @@ struct AppFeature {
           .send(.settings(.task)),
           licenseClient.isEnforced ? .send(.license(.task)) : .none,
           .send(.claudeAccounts(.task)),
+          .send(.remoteKage(.task)),
           .send(.dotfilesSync(.task)),
           .send(.terminals(.task)),
           .run { @MainActor send in
@@ -547,7 +550,7 @@ struct AppFeature {
           // Selecting the archived list must NOT overwrite the last
           // focused live worktree — preserve `focusedWorktreeID` so
           // returning from archives restores the prior row.
-          if !state.repositories.isShowingArchivedWorktrees {
+          if !state.repositories.isShowingArchivedWorktrees, !state.repositories.isShowingRemoteKage {
             state.repositories.$sidebar.withLock { sidebar in
               sidebar.focusedWorktreeID = lastFocusedWorktreeID
             }
@@ -1584,6 +1587,8 @@ struct AppFeature {
         return .none
       case .claudeAccounts:
         return .none
+      case .remoteKage:
+        return .none
       case .dotfilesSync:
         return .none
       case .repositories(.createRandomWorktreeSucceeded(let worktree, _, let pendingID, _)):
@@ -2170,6 +2175,10 @@ struct AppFeature {
     Scope(state: \.claudeAccounts, action: \.claudeAccounts) {
       ClaudeAccountsFeature()
     }
+    Scope(state: \.remoteKage, action: \.remoteKage) {
+      RemoteKageFeature()
+    }
+    RemoteKageSelectionSync()
     Scope(state: \.dotfilesSync, action: \.dotfilesSync) {
       DotfilesSyncFeature()
     }

@@ -13,6 +13,7 @@ public enum SettingsSection: Hashable {
   case scripts
   case claudeAccounts
   case dotfilesSync
+  case remoteHosts
   case repository(String)
   case repositoryScripts(String)
 
