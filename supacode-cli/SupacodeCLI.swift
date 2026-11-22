@@ -3,7 +3,7 @@ import ArgumentParser
 @main
 struct SupacodeCLI: ParsableCommand {
   static let configuration = CommandConfiguration(
-    commandName: "supacode",
+    commandName: CLIInvocationName.current,
     abstract: "Control Kage from the command line.",
     subcommands: [
       OpenCommand.self,
@@ -14,6 +14,7 @@ struct SupacodeCLI: ParsableCommand {
       RepoCommand.self,
       SettingsCommand.self,
       SocketCommand.self,
+      HostCommand.self,
     ],
     defaultSubcommand: OpenCommand.self
   )
