@@ -170,6 +170,9 @@ private struct SettingsSidebarView: View {
       Label("Sync", systemImage: "arrow.triangle.2.circlepath")
         .appFont(.body)
         .tag(SettingsSection.dotfilesSync)
+      Label("Remote Hosts", systemImage: "server.rack")
+        .appFont(.body)
+        .tag(SettingsSection.remoteHosts)
       if UpstreamLicensingAvailability.isEnabled {
         Label("License", systemImage: "key")
           .appFont(.body)
@@ -220,6 +223,7 @@ private struct SettingsDetailView: View {
   let licenseStore: StoreOf<LicenseFeature>
   let claudeAccountsStore: StoreOf<ClaudeAccountsFeature>
   let dotfilesSyncStore: StoreOf<DotfilesSyncFeature>
+  let remoteKageSettingsStore: StoreOf<RemoteKageSettingsFeature>
   @Environment(GhosttyShortcutManager.self) private var ghosttyShortcuts: GhosttyShortcutManager?
 
   var body: some View {
@@ -244,6 +248,8 @@ private struct SettingsDetailView: View {
       LicenseSettingsView(store: licenseStore)
     case .dotfilesSync:
       DotfilesSyncSettingsView(store: dotfilesSyncStore)
+    case .remoteHosts:
+      RemoteKageSettingsView(store: remoteKageSettingsStore)
     case .claudeAccounts:
       ClaudeAccountsSettingsView(
         store: claudeAccountsStore,
@@ -341,7 +347,8 @@ struct SettingsView: View {
         updatesStore: updatesStore,
         licenseStore: store.scope(state: \.license, action: \.license),
         claudeAccountsStore: store.scope(state: \.claudeAccounts, action: \.claudeAccounts),
-        dotfilesSyncStore: store.scope(state: \.dotfilesSync, action: \.dotfilesSync)
+        dotfilesSyncStore: store.scope(state: \.dotfilesSync, action: \.dotfilesSync),
+        remoteKageSettingsStore: store.scope(state: \.remoteKage.settings, action: \.remoteKage.settings)
       )
     }
     .toolbar {
