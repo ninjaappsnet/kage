@@ -142,8 +142,8 @@ struct RemoteKageCommandTests {
     #expect(host.remoteHost.sshDestination == host.sshDestination)
   }
 
-  @Test func newTabEncodesTheWorktreeIDAndStaysInTheBackground() {
-    let id = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+  @Test func newTabEncodesTheWorktreeIDAndStaysInTheBackground() throws {
+    let id = try #require(UUID(uuidString: "11111111-2222-3333-4444-555555555555"))
     #expect(
       RemoteKageCommand.newTabArguments(worktreeID: "/Users/a b/repo", tabID: id, command: "claude") == [
         "tab", "new", "-w", "%2FUsers%2Fa%20b%2Frepo", "--id", "11111111-2222-3333-4444-555555555555",
@@ -282,7 +282,7 @@ struct RemoteKageLiveClientTests {
   @Test(.dependencies) func newTabRunsTheHostCLI() async throws {
     let calls = LockIsolated<[[String]]>([])
     let shell = Self.recordingShell(calls) { ShellOutput(stdout: "ID", stderr: "", exitCode: 0) }
-    let id = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+    let id = try #require(UUID(uuidString: "11111111-2222-3333-4444-555555555555"))
     try await withDependencies {
       $0.shellClient = shell
       $0.continuousClock = TestClock()

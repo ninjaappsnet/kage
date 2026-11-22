@@ -1,11 +1,12 @@
+import Dependencies
 import Foundation
 
 @testable import supacode
 
 /// Snapshot builders shared by the Remote Kage polling tests.
 nonisolated enum RemoteKagePollingFixtures {
-  static let hostID = UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!
-  static let otherHostID = UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!
+  static let hostID = UUID(10)
+  static let otherHostID = UUID(11)
   static let worktreeID = "/Users/ahmet/Developer/kage"
 
   static let host = RemoteKageHost(id: hostID, name: "Mini", username: "ahmet", address: "mini.example")
