@@ -251,17 +251,19 @@ private nonisolated struct FakeZmx {
   func runRemoteCommand(host: RemoteKageHost, session: String) throws -> (status: Int32, output: String) {
     let line = try RemoteKageAttachCommand.attachLine(host: host, zmxPath: zmxPath, session: session).get()
     let words = String(line.dropFirst(SSHCommand.sshExecutablePath.count))
-    let argv = try Self.run(["/bin/sh", "-c", #"printf '%s\0' "# + words], in: root).output
+    let argv = try Self.run("/bin/sh", ["-c", #"printf '%s\0' "# + words], in: root).output
       .split(separator: "\0", omittingEmptySubsequences: false)
       .dropLast()
     let remoteCommand = try #require(argv.last.map(String.init))
-    return try Self.run(["/bin/sh", "-c", remoteCommand], in: root)
+    return try Self.run("/bin/sh", ["-c", remoteCommand], in: root)
   }
 
-  private static func run(_ arguments: [String], in directory: URL) throws -> (status: Int32, output: String) {
+  private static func run(_ executable: String, _ arguments: [String], in directory: URL) throws -> (
+    status: Int32, output: String
+  ) {
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: arguments[0])
-    process.arguments = Array(arguments.dropFirst())
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = arguments
     process.currentDirectoryURL = directory
     // A plain POSIX login shell keeps the user's profile out of the test.
     process.environment = [
