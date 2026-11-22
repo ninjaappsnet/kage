@@ -30,6 +30,14 @@ nonisolated enum RemoteKageAttachCommand {
     case zmxPathNotAbsolute
     /// Empty, option-like, or carrying control characters.
     case invalidSession
+
+    var message: String {
+      switch self {
+      case .invalidDestination: "The host's username or address isn't valid for SSH."
+      case .zmxPathNotAbsolute: "The host reported no usable zmx path."
+      case .invalidSession: "The session name isn't valid."
+      }
+    }
   }
 
   /// `$0` of the remote `/bin/sh`, shown in its error messages.
