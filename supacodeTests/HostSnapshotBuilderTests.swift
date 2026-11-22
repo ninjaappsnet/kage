@@ -91,12 +91,12 @@ struct HostSnapshotBuilderTests {
   // MARK: - Repositories
 
   @Test func repositoriesFollowSidebarSectionOrderWithUnknownAppended() {
-    let a = makeRepository("/tmp/a")
-    let b = makeRepository("/tmp/b")
-    let c = makeRepository("/tmp/c")
+    let repoA = makeRepository("/tmp/a")
+    let repoB = makeRepository("/tmp/b")
+    let repoC = makeRepository("/tmp/c")
     var sidebar = SidebarState()
-    sidebar.sections = [b.id: .init(), a.id: .init()]
-    let snapshot = build(repositories: [a, b, c], sidebar: sidebar)
+    sidebar.sections = [repoB.id: .init(), repoA.id: .init()]
+    let snapshot = build(repositories: [repoA, repoB, repoC], sidebar: sidebar)
     #expect(snapshot.repositories.map(\.id) == ["/tmp/b", "/tmp/a", "/tmp/c"])
   }
 
@@ -132,13 +132,13 @@ struct HostSnapshotBuilderTests {
   // MARK: - Workspaces
 
   @Test func workspacesKeepSwitcherOrderAndMembership() {
-    let a = makeRepository("/tmp/a")
-    let b = makeRepository("/tmp/b")
+    let repoA = makeRepository("/tmp/a")
+    let repoB = makeRepository("/tmp/b")
     var sidebar = SidebarState()
     sidebar.addWorkspace(.init(id: "w2", name: "Side"))
     sidebar.addWorkspace(.init(id: "w1", name: "Work"))
-    sidebar.sections = [a.id: .init(workspaceID: "w1"), b.id: .init()]
-    let snapshot = build(repositories: [a, b], sidebar: sidebar)
+    sidebar.sections = [repoA.id: .init(workspaceID: "w1"), repoB.id: .init()]
+    let snapshot = build(repositories: [repoA, repoB], sidebar: sidebar)
     #expect(snapshot.workspaces.map(\.id) == ["w2", "w1"])
     #expect(snapshot.workspaces.map(\.name) == ["Side", "Work"])
     #expect(snapshot.repositories.first { $0.id == "/tmp/a" }?.workspaceID == "w1")

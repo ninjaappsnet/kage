@@ -93,7 +93,7 @@ nonisolated enum HostSnapshotBuilder {
   static func encodeJSON(_ snapshot: HostSnapshot) throws -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    return String(decoding: try encoder.encode(snapshot), as: UTF8.self)
+    return String(bytes: try encoder.encode(snapshot), encoding: .utf8) ?? ""
   }
 
   /// The socket response: the wire is flat `[[String: String]]`, so the whole
