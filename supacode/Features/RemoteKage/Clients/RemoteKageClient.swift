@@ -40,13 +40,59 @@ nonisolated struct RemoteKageClient: Sendable {
 }
 
 nonisolated extension RemoteKageClient: DependencyKey {
-  /// Replaced by the real implementation (Phase 3).
-  static let liveValue = Self(
-    snapshot: { _ in throw RemoteKageError.commandFailed("Not implemented") },
-    screen: { _, _, _ in throw RemoteKageError.commandFailed("Not implemented") },
-    send: { _, _, _, _ in throw RemoteKageError.commandFailed("Not implemented") },
-    newTab: { _, _, _, _, _ in throw RemoteKageError.commandFailed("Not implemented") }
-  )
+  /// Runs everything through `RemoteKageTransport` (`ShellClient.ssh` over the
+  /// shared ControlMaster, bounded by `RemoteKageCommand`'s timeouts).
+  static let liveValue: Self = {
+    // The CLI path a host's snapshot reported, per host. Dropped on failure so
+    // a moved install falls back to the default path.
+    let cliPaths = LockIsolated<[RemoteKageHost.ID: String]>([:])
+    return Self(
+      snapshot: { host in
+        let cliPath = cliPaths.value[host.id] ?? RemoteKageCommand.defaultCLIPath
+        do {
+          let stdout = try await RemoteKageTransport.run(
+            host: host,
+            executable: cliPath,
+            arguments: RemoteKageCommand.snapshotArguments,
+            timeout: RemoteKageCommand.snapshotTimeout
+          )
+          let snapshot = try RemoteKageCommandResult.decodeSnapshot(stdout).get()
+          if let reported = snapshot.cliPath, !reported.isEmpty {
+            cliPaths.withValue { $0[host.id] = reported }
+          }
+          return snapshot
+        } catch {
+          cliPaths.withValue { $0[host.id] = nil }
+          throw error
+        }
+      },
+      screen: { host, zmxPath, session in
+        let lines = try await RemoteKageTransport.runLines(
+          host: host,
+          executable: zmxPath,
+          arguments: RemoteKageCommand.screenArguments(session: session),
+          timeout: RemoteKageCommand.screenTimeout
+        )
+        return RemoteKageCommandResult.screenText(lines: lines)
+      },
+      send: { host, zmxPath, session, text in
+        _ = try await RemoteKageTransport.run(
+          host: host,
+          executable: zmxPath,
+          arguments: RemoteKageCommand.sendArguments(session: session, text: text),
+          timeout: RemoteKageCommand.sendTimeout
+        )
+      },
+      newTab: { host, cliPath, worktreeID, tabID, command in
+        _ = try await RemoteKageTransport.run(
+          host: host,
+          executable: cliPath,
+          arguments: RemoteKageCommand.newTabArguments(worktreeID: worktreeID, tabID: tabID, command: command),
+          timeout: RemoteKageCommand.newTabTimeout
+        )
+      }
+    )
+  }()
 
   static let testValue = Self(
     snapshot: unimplemented("RemoteKageClient.snapshot", placeholder: HostSnapshot.placeholder),
@@ -68,7 +114,7 @@ nonisolated extension HostSnapshot {
   )
 }
 
-extension DependencyValues {
+nonisolated extension DependencyValues {
   var remoteKageClient: RemoteKageClient {
     get { self[RemoteKageClient.self] }
     set { self[RemoteKageClient.self] = newValue }
