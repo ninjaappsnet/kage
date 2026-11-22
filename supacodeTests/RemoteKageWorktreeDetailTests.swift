@@ -74,9 +74,9 @@ struct RemoteKageWorktreeDetailTests {
 
   // MARK: - Unavailable states.
 
-  @Test func unavailableReasonFollowsHostStatus() {
+  @Test func unavailableReasonFollowsHostStatus() throws {
     let snap = snapshot()
-    let worktree = snap.repositories[0].worktrees[0]
+    let worktree = try #require(snap.repositories.first?.worktrees.first)
     #expect(RemoteKageWorktreeDetail.unavailable(host: nil, hostState: nil, worktree: nil) == .hostRemoved)
     #expect(RemoteKageWorktreeDetail.unavailable(host: host, hostState: nil, worktree: nil) == .connecting)
     #expect(

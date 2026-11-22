@@ -68,7 +68,7 @@ struct RemoteKageSidebarModelTests {
 
   // MARK: - Grouping.
 
-  @Test func groupsRepositoriesByWorkspaceInHostOrderWithUngroupedLast() {
+  @Test func groupsRepositoriesByWorkspaceInHostOrderWithUngroupedLast() throws {
     let snapshot = snapshot(
       workspaces: [.init(id: "w2", name: "Work"), .init(id: "w1", name: "Side"), .init(id: "w3", name: "Empty")],
       repositories: [
@@ -84,6 +84,7 @@ struct RemoteKageSidebarModelTests {
 
     #expect(groups.map(\.id) == [.workspace("w2"), .workspace("w1"), .ungrouped])
     #expect(groups.map(\.title) == ["Work", "Side", "Other Projects"])
+    try #require(groups.count == 3)
     #expect(groups[0].repositories.map(\.id) == ["b"])
     #expect(groups[1].repositories.map(\.id) == ["a", "c"])
     // Repositories pointing at a workspace the host no longer lists fall back to ungrouped.
@@ -99,7 +100,7 @@ struct RemoteKageSidebarModelTests {
     #expect(groups.first?.title == nil)
   }
 
-  @Test func repositoryRowsCarryWorktreesInOrderAndParseTheirColor() {
+  @Test func repositoryRowsCarryWorktreesInOrderAndParseTheirColor() throws {
     let snapshot = snapshot(
       repositories: [
         repository(
@@ -113,6 +114,8 @@ struct RemoteKageSidebarModelTests {
 
     let repositories = RemoteKageSidebarModel.groups(for: snapshot, hostID: hostID).flatMap(\.repositories)
 
+    try #require(repositories.count == 2)
+    try #require(repositories[0].worktrees.count == 2)
     #expect(repositories[0].name == "A")
     #expect(repositories[0].color == .teal)
     #expect(repositories[0].worktrees.map(\.name) == ["main", "feat"])
@@ -125,7 +128,7 @@ struct RemoteKageSidebarModelTests {
 
   // MARK: - Agents.
 
-  @Test func worktreeAggregatesAgentsAcrossTabsAwaitingFirst() {
+  @Test func worktreeAggregatesAgentsAcrossTabsAwaitingFirst() throws {
     let snapshot = snapshot(
       repositories: [
         repository(
@@ -146,7 +149,9 @@ struct RemoteKageSidebarModelTests {
       ]
     )
 
-    let row = RemoteKageSidebarModel.groups(for: snapshot, hostID: hostID)[0].repositories[0].worktrees[0]
+    let row = try #require(
+      RemoteKageSidebarModel.groups(for: snapshot, hostID: hostID).first?.repositories.first?.worktrees.first
+    )
 
     #expect(
       row.agents == [
@@ -169,7 +174,7 @@ struct RemoteKageSidebarModelTests {
     #expect(instances.unknownCount == 0)
   }
 
-  @Test func idleWorktreeIsNeitherAwaitingNorBusy() {
+  @Test func idleWorktreeIsNeitherAwaitingNorBusy() throws {
     let snapshot = snapshot(
       repositories: [
         repository(
@@ -181,7 +186,9 @@ struct RemoteKageSidebarModelTests {
       ]
     )
 
-    let row = RemoteKageSidebarModel.groups(for: snapshot, hostID: hostID)[0].repositories[0].worktrees[0]
+    let row = try #require(
+      RemoteKageSidebarModel.groups(for: snapshot, hostID: hostID).first?.repositories.first?.worktrees.first
+    )
 
     #expect(!row.isAwaitingInput)
     #expect(!row.isBusy)
@@ -190,7 +197,7 @@ struct RemoteKageSidebarModelTests {
 
   // MARK: - Hosts.
 
-  @Test func hostsFollowConfiguredOrderAndOnlySnapshottedOnesHaveGroups() {
+  @Test func hostsFollowConfiguredOrderAndOnlySnapshottedOnesHaveGroups() throws {
     let first = RemoteKageHost(id: hostID, name: "Mini 1", username: "me", address: "mini1")
     let second = RemoteKageHost(name: "Mini 2", username: "me", address: "mini2")
     let awaiting = snapshot(
@@ -212,6 +219,7 @@ struct RemoteKageSidebarModelTests {
     let model = RemoteKageSidebarModel.make(hosts: [first, second], hostStates: hostStates)
 
     #expect(model.hosts.map(\.name) == ["Mini 1", "Mini 2"])
+    try #require(model.hosts.count == 2)
     #expect(model.hosts[0].groups?.count == 1)
     #expect(model.hosts[0].isAwaitingInput)
     #expect(model.hosts[1].groups == nil)
