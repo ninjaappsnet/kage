@@ -10,6 +10,15 @@ import Testing
 struct HostSnapshotBuilderTests {
   // MARK: - Fixtures
 
+  private func firstRepository(_ snapshot: HostSnapshot) throws -> HostSnapshot.Repository {
+    try #require(snapshot.repositories.first)
+  }
+
+  private func firstTabs(_ snapshot: HostSnapshot) throws -> [HostSnapshot.Tab] {
+    let repository = try firstRepository(snapshot)
+    return try #require(repository.worktrees.first).tabs
+  }
+
   private func makeRepository(
     _ path: String,
     branches: [String] = [],
@@ -77,7 +86,7 @@ struct HostSnapshotBuilderTests {
 
   // MARK: - Header
 
-  @Test func headerFieldsAreCopied() {
+  @Test func headerFieldsAreCopied() throws {
     let snapshot = build(repositories: [])
     #expect(snapshot.schemaVersion == HostSnapshot.currentSchemaVersion)
     #expect(snapshot.kageVersion == "1.2.3")
@@ -90,7 +99,7 @@ struct HostSnapshotBuilderTests {
 
   // MARK: - Repositories
 
-  @Test func repositoriesFollowSidebarSectionOrderWithUnknownAppended() {
+  @Test func repositoriesFollowSidebarSectionOrderWithUnknownAppended() throws {
     let repoA = makeRepository("/tmp/a")
     let repoB = makeRepository("/tmp/b")
     let repoC = makeRepository("/tmp/c")
@@ -100,7 +109,7 @@ struct HostSnapshotBuilderTests {
     #expect(snapshot.repositories.map(\.id) == ["/tmp/b", "/tmp/a", "/tmp/c"])
   }
 
-  @Test func remoteRepositoriesAreExcluded() {
+  @Test func remoteRepositoriesAreExcluded() throws {
     let local = makeRepository("/tmp/local")
     let remote = makeRepository(
       "/srv/remote", host: RemoteHost(alias: "box", username: "dev", port: 22))
@@ -108,30 +117,31 @@ struct HostSnapshotBuilderTests {
     #expect(snapshot.repositories.map(\.id) == ["/tmp/local"])
   }
 
-  @Test func customTitleColorAndGitFlagComeFromSidebar() {
+  @Test func customTitleColorAndGitFlagComeFromSidebar() throws {
     let repo = makeRepository("/tmp/folder", isGit: false)
     var sidebar = SidebarState()
     sidebar.sections = [repo.id: .init(title: "  Pretty  ", color: .teal)]
     let snapshot = build(repositories: [repo], sidebar: sidebar)
-    let result = snapshot.repositories[0]
+    let result = try firstRepository(snapshot)
     #expect(result.name == "Pretty")
     #expect(result.color == HostSnapshot.RepositoryColorValue(rawValue: "teal"))
     #expect(result.isGitRepository == false)
     #expect(result.rootPath == "/tmp/folder")
   }
 
-  @Test func blankTitleFallsBackToRepositoryName() {
+  @Test func blankTitleFallsBackToRepositoryName() throws {
     let repo = makeRepository("/tmp/plain")
     var sidebar = SidebarState()
     sidebar.sections = [repo.id: .init(title: "   ")]
     let snapshot = build(repositories: [repo], sidebar: sidebar)
-    #expect(snapshot.repositories[0].name == "plain")
-    #expect(snapshot.repositories[0].color == nil)
+    let result = try firstRepository(snapshot)
+    #expect(result.name == "plain")
+    #expect(result.color == nil)
   }
 
   // MARK: - Workspaces
 
-  @Test func workspacesKeepSwitcherOrderAndMembership() {
+  @Test func workspacesKeepSwitcherOrderAndMembership() throws {
     let repoA = makeRepository("/tmp/a")
     let repoB = makeRepository("/tmp/b")
     var sidebar = SidebarState()
@@ -147,59 +157,59 @@ struct HostSnapshotBuilderTests {
 
   // MARK: - Worktrees
 
-  @Test func worktreesAreMainFirstThenPinnedThenUnpinned() {
+  @Test func worktreesAreMainFirstThenPinnedThenUnpinned() throws {
     let repo = makeRepository("/tmp/r", branches: ["x", "y", "z"])
     var sidebar = SidebarState()
     sidebar.insert(worktree: WorktreeID("/tmp/r/y"), in: repo.id, bucket: .unpinned)
     sidebar.insert(worktree: WorktreeID("/tmp/r/x"), in: repo.id, bucket: .unpinned)
     sidebar.insert(worktree: WorktreeID("/tmp/r/z"), in: repo.id, bucket: .pinned)
-    let worktrees = build(repositories: [repo], sidebar: sidebar).repositories[0].worktrees
+    let worktrees = try firstRepository(build(repositories: [repo], sidebar: sidebar)).worktrees
     #expect(worktrees.map(\.name) == ["main", "z", "y", "x"])
     #expect(worktrees.map(\.isMain) == [true, false, false, false])
     #expect(worktrees.map(\.isPinned) == [false, true, false, false])
-    #expect(worktrees[1].path == "/tmp/r/z")
-    #expect(worktrees[1].id == "/tmp/r/z")
+    #expect(worktrees.map(\.path) == ["/tmp/r", "/tmp/r/z", "/tmp/r/y", "/tmp/r/x"])
+    #expect(worktrees.map(\.id) == ["/tmp/r", "/tmp/r/z", "/tmp/r/y", "/tmp/r/x"])
   }
 
-  @Test func archivedWorktreesAreExcluded() {
+  @Test func archivedWorktreesAreExcluded() throws {
     let repo = makeRepository("/tmp/r", branches: ["old", "new"])
     var sidebar = SidebarState()
     sidebar.insert(worktree: WorktreeID("/tmp/r/new"), in: repo.id, bucket: .unpinned)
     sidebar.archive(worktree: WorktreeID("/tmp/r/old"), in: repo.id, from: .unpinned, at: Date())
-    let worktrees = build(repositories: [repo], sidebar: sidebar).repositories[0].worktrees
+    let worktrees = try firstRepository(build(repositories: [repo], sidebar: sidebar)).worktrees
     #expect(worktrees.map(\.name) == ["main", "new"])
   }
 
-  @Test func worktreesMissingFromSidebarAreAppendedInRepositoryOrder() {
+  @Test func worktreesMissingFromSidebarAreAppendedInRepositoryOrder() throws {
     let repo = makeRepository("/tmp/r", branches: ["a", "b", "c"])
     var sidebar = SidebarState()
     sidebar.insert(worktree: WorktreeID("/tmp/r/b"), in: repo.id, bucket: .unpinned)
-    let worktrees = build(repositories: [repo], sidebar: sidebar).repositories[0].worktrees
+    let worktrees = try firstRepository(build(repositories: [repo], sidebar: sidebar)).worktrees
     #expect(worktrees.map(\.name) == ["main", "b", "a", "c"])
   }
 
-  @Test func mainWorktreeIsNotDuplicatedWhenBucketed() {
+  @Test func mainWorktreeIsNotDuplicatedWhenBucketed() throws {
     let repo = makeRepository("/tmp/r", branches: ["a"])
     var sidebar = SidebarState()
     sidebar.insert(worktree: WorktreeID("/tmp/r/a"), in: repo.id, bucket: .unpinned)
     sidebar.insert(worktree: WorktreeID("/tmp/r"), in: repo.id, bucket: .unpinned)
-    let worktrees = build(repositories: [repo], sidebar: sidebar).repositories[0].worktrees
+    let worktrees = try firstRepository(build(repositories: [repo], sidebar: sidebar)).worktrees
     #expect(worktrees.map(\.name) == ["main", "a"])
   }
 
-  @Test func customWorktreeTitleOverridesName() {
+  @Test func customWorktreeTitleOverridesName() throws {
     let repo = makeRepository("/tmp/r", branches: ["feat"])
     var sidebar = SidebarState()
     sidebar.insert(worktree: WorktreeID("/tmp/r/feat"), in: repo.id, bucket: .unpinned)
     sidebar.setCustomization(
       title: "Shiny", color: nil, worktree: WorktreeID("/tmp/r/feat"), in: repo.id)
-    let worktrees = build(repositories: [repo], sidebar: sidebar).repositories[0].worktrees
+    let worktrees = try firstRepository(build(repositories: [repo], sidebar: sidebar)).worktrees
     #expect(worktrees.map(\.name) == ["main", "Shiny"])
   }
 
   // MARK: - Tabs
 
-  @Test func tabsKeepOrderFocusAndTitles() {
+  @Test func tabsKeepOrderFocusAndTitles() throws {
     let repo = makeRepository("/tmp/r")
     let first = UUID()
     let second = UUID()
@@ -209,51 +219,51 @@ struct HostSnapshotBuilderTests {
         tab(second, title: "claude", focused: true),
       ]
     ]
-    let result = build(repositories: [repo], tabs: tabs).repositories[0].worktrees[0].tabs
+    let result = try firstTabs(build(repositories: [repo], tabs: tabs))
     #expect(result.map(\.id) == [first.uuidString, second.uuidString])
     #expect(result.map(\.title) == ["build", "claude"])
     #expect(result.map(\.isFocused) == [false, true])
   }
 
-  @Test func nonTerminalTabsAreOmitted() {
+  @Test func nonTerminalTabsAreOmitted() throws {
     let repo = makeRepository("/tmp/r")
     let keep = UUID()
     let tabs = [
       WorktreeID("/tmp/r"): [tab(UUID(), terminal: false), tab(keep)]
     ]
-    let result = build(repositories: [repo], tabs: tabs).repositories[0].worktrees[0].tabs
+    let result = try firstTabs(build(repositories: [repo], tabs: tabs))
     #expect(result.map(\.id) == [keep.uuidString])
   }
 
   // MARK: - zmx
 
-  @Test func zmxSessionIsDerivedFromSurfaceID() {
+  @Test func zmxSessionIsDerivedFromSurfaceID() throws {
     let repo = makeRepository("/tmp/r")
     let surface = UUID()
     let tabs = [WorktreeID("/tmp/r"): [tab(surface: surface)]]
-    let result = build(repositories: [repo], tabs: tabs).repositories[0].worktrees[0].tabs[0]
+    let result = try #require(firstTabs(build(repositories: [repo], tabs: tabs)).first)
     #expect(result.surfaceID == surface.uuidString)
     #expect(result.zmxSession == ZmxSessionID.make(surfaceID: surface))
   }
 
-  @Test func zmxSessionIsNilWhenTabBypassesZmx() {
+  @Test func zmxSessionIsNilWhenTabBypassesZmx() throws {
     let repo = makeRepository("/tmp/r")
     let tabs = [WorktreeID("/tmp/r"): [tab(usesZmx: false)]]
-    let result = build(repositories: [repo], tabs: tabs).repositories[0].worktrees[0].tabs[0]
+    let result = try #require(firstTabs(build(repositories: [repo], tabs: tabs)).first)
     #expect(result.zmxSession == nil)
   }
 
-  @Test func zmxSessionIsNilWhenZmxUnavailable() {
+  @Test func zmxSessionIsNilWhenZmxUnavailable() throws {
     let repo = makeRepository("/tmp/r")
     let tabs = [WorktreeID("/tmp/r"): [tab()]]
     let snapshot = build(repositories: [repo], tabs: tabs, zmxPath: nil)
     #expect(snapshot.zmxPath == nil)
-    #expect(snapshot.repositories[0].worktrees[0].tabs[0].zmxSession == nil)
+    #expect(try firstTabs(snapshot).first?.zmxSession == nil)
   }
 
   // MARK: - Agents
 
-  @Test func agentsAreMappedPerSurfaceAndSortedByKind() {
+  @Test func agentsAreMappedPerSurfaceAndSortedByKind() throws {
     let repo = makeRepository("/tmp/r")
     let surface = UUID()
     let other = UUID()
@@ -262,14 +272,15 @@ struct HostSnapshotBuilderTests {
       .init(surfaceID: surface, kind: "codex", activity: "idle"),
       .init(surfaceID: surface, kind: "claude", activity: "awaitingInput"),
     ]
-    let result = build(repositories: [repo], tabs: tabs, agents: agents).repositories[0].worktrees[0].tabs
+    let result = try firstTabs(build(repositories: [repo], tabs: tabs, agents: agents))
+    #expect(result.count == 2)
     #expect(
-      result[0].agents == [
+      result.first?.agents == [
         HostSnapshot.Agent(kind: "claude", activity: "awaitingInput"),
         HostSnapshot.Agent(kind: "codex", activity: "idle"),
       ])
-    #expect(result[0].isAwaitingInput)
-    #expect(result[1].agents.isEmpty)
+    #expect(result.first?.isAwaitingInput == true)
+    #expect(result.last?.agents.isEmpty == true)
   }
 
   // MARK: - Wire
@@ -289,8 +300,9 @@ struct HostSnapshotBuilderTests {
     let snapshot = build(repositories: [])
     let rows = try HostSnapshotBuilder.queryRows(snapshot)
     #expect(rows.count == 1)
-    let json = try #require(rows[0]["json"])
-    #expect(rows[0].count == 1)
+    let row = try #require(rows.first)
+    let json = try #require(row["json"])
+    #expect(row.count == 1)
     #expect(try JSONDecoder().decode(HostSnapshot.self, from: Data(json.utf8)) == snapshot)
   }
 }
