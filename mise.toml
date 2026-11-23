@@ -9,3 +9,10 @@ xcbeautify = "3.2.1"
 "spm:swiftlang/swift-format" = "602.0.0"
 "github:ldomaradzki/xcsift" = "latest"
 "npm:create-dmg" = "latest"
+
+[env]
+# Tuist 4.203's SwifterPM resolver fails about one `tuist install` in three with
+# "Could not find Package.swift" when Tuist/Package.swift has a local
+# `.package(path:)` (the vendored swift-markdown-ui). Plain SwiftPM resolution
+# is reliable. Revisit on a Tuist bump.
+TUIST_USE_SWIFTERPM = "0"

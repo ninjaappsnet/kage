@@ -65,6 +65,7 @@ let testDependencies: [TargetDependency] = [
   .external(name: "OrderedCollections"),
   .external(name: "PostHog"),
   .external(name: "Sharing"),
+  .external(name: "MarkdownUI"),
 ]
 
 // Tests are split into three host-app bundles so xcodebuild can run them in
