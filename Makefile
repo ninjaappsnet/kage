@@ -65,10 +65,18 @@ generate-project: $(TUIST_GENERATION_STAMP_DIR)/$(TUIST_GENERATE_CACHE_PROFILE) 
 
 generate-project-sources: $(TUIST_SOURCE_GENERATION_STAMP) # Resolve packages and generate a source-only Xcode workspace
 
+# Tuist 4.203's SwifterPM resolver fails one install in two or three with "Could
+# not find Package.swift" while Tuist/Package.swift has a local .package(path:)
+# (the vendored swift-markdown-ui). Attempts are independent, so retry. Drop the
+# loop once MarkdownUI builds as a Tuist target instead of a local package.
 $(TUIST_INSTALL_STAMP): $(TUIST_GENERATION_INPUTS) | preflight
 	mkdir -p "$(TUIST_GENERATION_STAMP_DIR)"
 	$(SELECT_DEVELOPER_DIR); \
-	mise exec -- tuist install $(TUIST_INSTALL_FLAGS)
+	for attempt in 1 2 3 4 5 6 7 8 9 10; do \
+		mise exec -- tuist install $(TUIST_INSTALL_FLAGS) && break; \
+		[ "$$attempt" = 10 ] && exit 1; \
+		echo "tuist install failed (attempt $$attempt of 10); retrying"; \
+	done
 	touch "$@"
 
 $(TUIST_GENERATION_STAMP_DIR)/%: $(TUIST_GENERATION_INPUTS) $(TUIST_INSTALL_STAMP)
