@@ -55,7 +55,7 @@ you.
 Open a remote tab to attach to its running session as a full terminal: read the output, type
 prompts. Closing the tab, or pressing **ctrl+\\**, detaches; the session keeps running on the host.
 Simple prompts can be answered without attaching, and you can open a new tab on the host. Every
-host must run a Kage build that answers `kage host snapshot` (1.3 or later). Needs key-based SSH
+host must run a Kage build that answers `kage host snapshot` (1.3.2 or later). Needs key-based SSH
 access to the host.
 
 ### No telemetry

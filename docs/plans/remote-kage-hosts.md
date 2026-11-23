@@ -1,6 +1,6 @@
 # Remote Kage hosts
 
-Status: built 2026-11-22 on `feat/remote-kage-hosts` (phases 1–8, merged to `main`), shipping in 1.3.0. See "Outcome" at the end.
+Status: built 2026-11-22 on `feat/remote-kage-hosts` (phases 1–8, merged to `main`), released in 1.3.2 on 2026-11-23 (1.3.0 and 1.3.1 tags failed CI, never published). See "Outcome" at the end.
 
 ## Goal
 
@@ -152,7 +152,7 @@ Everything else lives in `supacode/Features/RemoteKage/`.
   classifies as needsUpdate, attach in a temporary in-app harness (typing,
   resize, real ctrl+\\ detaches, unmount detaches, missing session is not
   recreated, killed ssh master reconnects). Not yet exercised end to end in
-  the shipped UI; the mini needs 1.3.0 first.
+  the shipped UI; the mini needs 1.3.2 first.
 - Two-viewer resize (resolved): zmx 0.8.1 has one leader client, the one that
   last sent keyboard input; only its size applies. Our view shows the session
   at the mini's size until the first keystroke here, then the mini's window
