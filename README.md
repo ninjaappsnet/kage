@@ -58,6 +58,14 @@ Simple prompts can be answered without attaching, and you can open a new tab on 
 host must run a Kage build that answers `kage host snapshot` (1.3.2 or later). Needs key-based SSH
 access to the host.
 
+A remote worktree's files can be browsed and edited too: **⌥⌘E** (or the folder button in its
+header) shows the same file explorer as a local worktree, rooted at the shown tab's folder, and a
+file opens in a viewer beside the terminal, with the same previews (code, Markdown, HTML, images,
+PDF), **⌘S** to save, and a warning when the file changed on the host since you opened it. The
+list follows changes on the host as they happen and costs nothing while nothing changes. Browsing
+needs the host to run the release that has `kage host serve` (the next release); an older host
+says so instead.
+
 ### No telemetry
 
 The analytics and crash-reporting SDKs are unlinked in this fork. Kage phones home only for Sparkle
