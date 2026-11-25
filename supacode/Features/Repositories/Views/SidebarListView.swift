@@ -19,12 +19,15 @@ struct SidebarListView: View {
   @Shared(.sidebarNestWorktreesByBranch) private var nestWorktreesByBranch: Bool
   @Shared(.sidebarSectionSort) private var sectionSort: SidebarSectionSort
   @Environment(\.remoteKageStore) private var remoteKageStore
+  @Shared(.sidebarThisMacExpanded) private var isThisMacExpanded: Bool
 
   var body: some View {
     let state = store.state
     let structure = state.sidebarStructure
     let currentSelections = state.sidebarSelections
     let pendingSidebarReveal = state.pendingSidebarReveal
+    let hasRemoteHosts =
+      remoteKageStore.map { SidebarMachineGroups.showsGroupHeaders(hostCount: $0.hosts.count) } ?? false
 
     // The only legal view-side computation: a trivial join from the
     // reducer-derived `slotByID` against the Cmd state + shortcut overrides.
@@ -41,7 +44,13 @@ struct SidebarListView: View {
 
     return ScrollViewReader { scrollProxy in
       List(selection: $store.sidebarListSelection) {
-        ForEach(structure.sections) { section in
+        if hasRemoteHosts {
+          SidebarMachineGroupHeader(group: .thisMac, isExpanded: Binding($isThisMacExpanded))
+        }
+        ForEach(
+          SidebarMachineGroups.visibleLocalSections(
+            structure.sections, hasRemoteHosts: hasRemoteHosts, isThisMacExpanded: isThisMacExpanded)
+        ) { section in
           SidebarSectionDispatcher(
             section: section,
             structure: structure,
@@ -66,6 +75,7 @@ struct SidebarListView: View {
       .listStyle(.sidebar)
       .focused($isSidebarFocused)
       .frame(minWidth: 220)
+      .modifier(SidebarMachineGroupsReveal(selection: state.selection, pendingRevealID: pendingSidebarReveal?.id))
       .onChange(of: groupPinnedRows, initial: false) { _, _ in
         store.send(.sidebarGroupingTogglesChanged)
       }
