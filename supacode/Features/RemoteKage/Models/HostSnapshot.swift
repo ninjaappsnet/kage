@@ -71,6 +71,9 @@ nonisolated struct HostSnapshot: Codable, Equatable, Sendable {
     var zmxSession: String?
     /// Agents the host's presence tracking sees on this surface, sorted by kind.
     var agents: [Agent]
+    /// The surface's current working directory on the host (as its shell
+    /// reported it), nil when unknown. Optional on the wire: older hosts omit it.
+    var workingDirectory: String?
   }
 
   nonisolated struct Agent: Codable, Equatable, Sendable {
