@@ -1,6 +1,9 @@
 # Remote files and sidebar machine groups
 
-Status: planned 2026-11-25, in progress on `feat/remote-files`. Follows
+Status: planned 2026-11-25, in progress on `feat/remote-files`. Merged there on
+2026-11-25: A (`kage host serve`, fb7224ea), C (sidebar groups, 89316f82),
+D (tab working directory, fbb484b1). B (viewer seam) in progress; E not started.
+Sidebar not yet checked on screen. Follows
 `docs/plans/remote-kage-hosts.md` (released in 1.3.2).
 
 ## Goal
