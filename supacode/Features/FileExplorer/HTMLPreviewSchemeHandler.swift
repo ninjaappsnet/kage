@@ -7,21 +7,27 @@ private nonisolated let htmlPreviewLogger = SupaLogger("HTMLPreview")
 /// Serves the previewed document and the assets it references over
 /// `HTMLPreviewPolicy.scheme`. Every request is screened by
 /// `HTMLPreviewPolicy.resolve` and answered with the current Content Security
-/// Policy as a response header, so the file on disk is never modified to carry
-/// a policy.
+/// Policy as a response header, so the file is never modified to carry a policy.
 ///
-/// Reads are synchronous. That is deliberate: `start` and `stop` both arrive on
-/// the main thread, so answering within the same turn makes the
-/// "task stopped before it was answered" race — which throws inside
-/// `WKURLSchemeTask` — structurally impossible. The size cap keeps that honest
-/// for the pathological case of a page referencing a huge asset.
+/// Bytes come from a `FileSystemSource`, so a page on a remote host loads its
+/// relative stylesheets and scripts the same way a local one does. Reads are
+/// therefore async, which reopens the "task stopped before it was answered" race
+/// (WebKit throws inside `WKURLSchemeTask` when a stopped task is answered):
+/// `start` records the task as in flight, `stop` forgets it, and a read that
+/// lands for a forgotten task is dropped. Both callbacks and the completion run
+/// on the main actor, so the bookkeeping needs no lock. The size cap keeps a page
+/// referencing a huge asset from pulling it into memory.
 final class HTMLPreviewSchemeHandler: NSObject, WKURLSchemeHandler {
   /// Assets alongside a report are small; anything larger is a mistake or an
-  /// attempt to stall the main thread.
+  /// attempt to stall the preview.
   private static let maxResponseBytes = 64 * 1024 * 1024
 
   private let rootDirectory: URL
   private let entryFileName: String
+  private let source: any FileSystemSource
+
+  /// Tasks started and not yet answered or stopped.
+  private var inFlight: Set<ObjectIdentifier> = []
 
   /// Read at response time rather than captured, so flipping trust and reloading
   /// serves the new policy without rebuilding the web view.
@@ -33,9 +39,10 @@ final class HTMLPreviewSchemeHandler: NSObject, WKURLSchemeHandler {
 
   nonisolated deinit {}
 
-  init(rootDirectory: URL, entryFileName: String) {
+  init(rootDirectory: URL, entryFileName: String, source: any FileSystemSource = LocalFileSystemSource()) {
     self.rootDirectory = rootDirectory
     self.entryFileName = entryFileName
+    self.source = source
   }
 
   // `WKURLSchemeHandler` is `WK_SWIFT_UI_ACTOR`, so both callbacks are already
@@ -45,7 +52,7 @@ final class HTMLPreviewSchemeHandler: NSObject, WKURLSchemeHandler {
   }
 
   func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {
-    // Nothing to cancel: `respond(to:)` completes the task before returning.
+    inFlight.remove(ObjectIdentifier(urlSchemeTask))
   }
 
   private func respond(to task: any WKURLSchemeTask) {
@@ -67,24 +74,43 @@ final class HTMLPreviewSchemeHandler: NSObject, WKURLSchemeHandler {
       return
     }
 
-    do {
-      let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path(percentEncoded: false))
-      let size = (attributes[.size] as? Int) ?? 0
-      guard size <= Self.maxResponseBytes else {
-        htmlPreviewLogger.warning("Preview asset too large (\(size) bytes): \(fileURL.lastPathComponent)")
-        task.didFailWithError(URLError(.dataLengthExceedsMaximum))
-        return
+    let taskID = ObjectIdentifier(task)
+    inFlight.insert(taskID)
+    let source = source
+    Task { [weak self] in
+      let outcome: Result<FileSystemReadResult, FileSystemSourceError>
+      do throws(FileSystemSourceError) {
+        outcome = .success(try await source.read(fileURL, maxBytes: Self.maxResponseBytes))
+      } catch {
+        outcome = .failure(error)
       }
-      let data = try Data(contentsOf: fileURL)
-      guard let response = Self.response(for: url, byteCount: data.count, fileURL: fileURL, trusted: isTrusted)
+      self?.finish(task, id: taskID, url: url, fileURL: fileURL, outcome: outcome)
+    }
+  }
+
+  private func finish(
+    _ task: any WKURLSchemeTask,
+    id taskID: ObjectIdentifier,
+    url: URL,
+    fileURL: URL,
+    outcome: Result<FileSystemReadResult, FileSystemSourceError>
+  ) {
+    // Stopped while the read was in flight: answering now would throw.
+    guard inFlight.remove(taskID) != nil else { return }
+    switch outcome {
+    case .success(let result):
+      guard let response = Self.response(for: url, byteCount: result.data.count, fileURL: fileURL, trusted: isTrusted)
       else {
         task.didFailWithError(URLError(.cannotParseResponse))
         return
       }
       task.didReceive(response)
-      task.didReceive(data)
+      task.didReceive(result.data)
       task.didFinish()
-    } catch {
+    case .failure(let error) where error.code == .tooLarge:
+      htmlPreviewLogger.warning("Preview asset too large (\(error.size ?? 0) bytes): \(fileURL.lastPathComponent)")
+      task.didFailWithError(URLError(.dataLengthExceedsMaximum))
+    case .failure(let error):
       htmlPreviewLogger.debug("Preview asset unreadable \(fileURL.lastPathComponent): \(error.localizedDescription)")
       task.didFailWithError(error)
     }

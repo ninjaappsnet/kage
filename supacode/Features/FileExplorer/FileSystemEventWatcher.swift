@@ -9,7 +9,7 @@ import Foundation
 /// `onChange` fires on a private dispatch queue (not the main thread); the model
 /// hops back to the main actor. The stream stops and releases on `deinit`, so a
 /// watcher's lifetime is simply tied to its owner.
-final class FileSystemEventWatcher: @unchecked Sendable {
+nonisolated final class FileSystemEventWatcher: @unchecked Sendable {
   nonisolated(unsafe) private var stream: FSEventStreamRef?
   private let queue = DispatchQueue(label: "net.ninjaapps.kage.file-explorer.fsevents")
   private let onChange: @Sendable () -> Void

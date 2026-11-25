@@ -28,7 +28,7 @@ struct FileExplorerModelTests {
     return base
   }
 
-  @Test func updateRootSwitchesToNewDirectoryContents() throws {
+  @Test func updateRootSwitchesToNewDirectoryContents() async throws {
     let dirA = try Self.makeTempDir(files: ["a1.txt", "a2.txt"])
     let dirB = try Self.makeTempDir(files: ["b1.txt"])
     defer {
@@ -37,14 +37,16 @@ struct FileExplorerModelTests {
     }
 
     let model = FileExplorerModel(rootURL: dirA)
+    await model.reload()
     #expect(model.rows.map(\.node.name) == ["a1.txt", "a2.txt"])
 
     model.updateRoot(dirB)
+    await model.reload()
     #expect(model.rootURL == dirB.standardizedFileURL)
     #expect(model.rows.map(\.node.name) == ["b1.txt"])
   }
 
-  @Test func updateRootClearsExpansionAndSelection() throws {
+  @Test func updateRootClearsExpansionAndSelection() async throws {
     let dirA = try Self.makeTempDir(files: ["root.txt"], subdir: (name: "sub", child: "inner.txt"))
     let dirB = try Self.makeTempDir(files: ["b1.txt"])
     defer {
@@ -53,25 +55,28 @@ struct FileExplorerModelTests {
     }
 
     let model = FileExplorerModel(rootURL: dirA)
+    await model.reload()
     // Expand the directory node the model actually listed (its URL representation
     // is what keys expansion); a hand-built URL would not match.
     let subNode = try #require(model.rows.first { $0.node.name == "sub" }?.node)
-    model.toggleExpansion(subNode)
+    await model.toggleExpansion(subNode)
     model.selectedURL = subNode.url
     #expect(model.isExpanded(subNode.url))
     #expect(model.rows.contains { $0.node.name == "inner.txt" })
 
     model.updateRoot(dirB)
+    await model.reload()
     #expect(!model.isExpanded(subNode.url))
     #expect(model.selectedURL == nil)
     #expect(model.rows.map(\.node.name) == ["b1.txt"])
   }
 
-  @Test func updateRootToSameDirectoryIsNoOp() throws {
+  @Test func updateRootToSameDirectoryIsNoOp() async throws {
     let dirA = try Self.makeTempDir(files: ["a1.txt"])
     defer { try? FileManager.default.removeItem(at: dirA) }
 
     let model = FileExplorerModel(rootURL: dirA)
+    await model.reload()
     let marker = dirA.standardizedFileURL.appending(path: "a1.txt")
     model.selectedURL = marker
 

@@ -6,6 +6,8 @@ import SwiftUI
 /// rather than silently showing a blank document.
 struct HTMLPreview: View {
   let fileURL: URL
+  /// Serves the document and the assets it references.
+  let source: any FileSystemSource
   let isTrusted: Bool
   let onTrust: () -> Void
 
@@ -14,7 +16,7 @@ struct HTMLPreview: View {
   @State private var blockedResources: Set<String> = []
 
   var body: some View {
-    HTMLPreviewWebView(fileURL: fileURL, isTrusted: isTrusted) { blocked in
+    HTMLPreviewWebView(fileURL: fileURL, source: source, isTrusted: isTrusted) { blocked in
       blockedResources.insert(blocked)
     }
     .id(fileURL)
