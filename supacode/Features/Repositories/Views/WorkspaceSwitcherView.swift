@@ -2,16 +2,73 @@ import ComposableArchitecture
 import OrderedCollections
 import SwiftUI
 
-/// Top-of-sidebar workspace switcher. A workspace is a named filter over
-/// repositories (single membership via `SidebarState.Section.workspaceID`):
-/// switching filters the sidebar to that workspace's projects, "All Projects"
-/// clears the filter. The dropdown also creates / renames / deletes workspaces.
-///
-/// Lives in its own file (mounted via a single `.safeAreaInset` in
-/// `SidebarView`) so the workspaces feature stays additive to upstream — see
-/// "Minimizing Upstream Merge Conflicts" in AGENTS.md.
+/// Top-of-sidebar workspace switcher, pinned above the list. Lives in its own
+/// file (mounted via a single `.safeAreaInset` in `SidebarView`) so the
+/// workspaces feature stays additive to upstream — see "Minimizing Upstream
+/// Merge Conflicts" in AGENTS.md. With a remote host configured the picker
+/// moves into the "This Mac" band (`SidebarWorkspacePicker.placement`) and
+/// this view renders nothing, so the inset reserves no height.
 struct WorkspaceSwitcherView: View {
   @Bindable var store: StoreOf<RepositoriesFeature>
+  @Environment(\.remoteKageStore) private var remoteKageStore
+
+  var body: some View {
+    let hostCount = remoteKageStore?.hosts.count ?? 0
+    if SidebarWorkspacePicker.placement(hostCount: hostCount) == .pinnedAboveList {
+      pinnedSwitcher
+    }
+  }
+
+  private var pinnedSwitcher: some View {
+    WorkspacePickerMenu(store: store) { title in
+      HStack(spacing: 6) {
+        Image(systemName: "rectangle.3.group")
+          .foregroundStyle(.secondary)
+          .accessibilityHidden(true)
+        Text(title)
+          .fontWeight(.medium)
+          .lineLimit(1)
+        Spacer(minLength: 0)
+        Image(systemName: "chevron.up.chevron.down")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+          .accessibilityHidden(true)
+      }
+      .contentShape(.rect)
+    }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    // The width has to go on the menu, not its label: AppKit renders the label
+    // and drops its SwiftUI layout, so `Spacer`, `maxWidth: .infinity` and
+    // `containerRelativeFrame` applied in there were all measured as no-ops and
+    // the click target stayed a content-sized island centered in the sidebar.
+    // A definite width on the menu itself does size the underlying button.
+    .containerRelativeFrame(.horizontal) { width, _ in width - 16 }
+    // Matches the 8pt inset `.listStyle(.sidebar)` gives its rows, so the
+    // switcher's edges line up with the rows beneath it.
+    .padding(.horizontal, 8)
+    .padding(.vertical, 6)
+    // The switcher is a `.safeAreaInset` over the List (see `SidebarView`), so
+    // rows scroll beneath it: paint the sidebar's own `.sidebar` material so it
+    // blends with the rows instead of reading as a lighter `.bar` strip, and
+    // stays opaque to the rows passing under it.
+    .background(SidebarMaterialBackground())
+    .overlay(alignment: .bottom) { Divider() }
+    .help("Switch, create, rename, or delete a workspace to filter the projects shown in the sidebar")
+  }
+}
+
+/// The workspace picker's menu and its create / rename prompt, shared by both
+/// placements: the pinned strip above the sidebar list (`WorkspaceSwitcherView`)
+/// and the "This Mac" group band (`SidebarWorkspaceBandMenu`). A workspace is a
+/// named filter over repositories (single membership via
+/// `SidebarState.Section.workspaceID`): switching filters the sidebar to that
+/// workspace's projects, "All Projects" clears the filter. The dropdown also
+/// creates / renames / deletes workspaces. `label` receives the resolved title
+/// ("All Projects" or the active workspace's name).
+struct WorkspacePickerMenu<PickerLabel: View>: View {
+  @Bindable var store: StoreOf<RepositoriesFeature>
+  @ViewBuilder var label: (_ title: String) -> PickerLabel
   @State private var prompt: Prompt?
   @State private var promptText = ""
 
@@ -50,7 +107,7 @@ struct WorkspaceSwitcherView: View {
 
     Menu {
       Picker("Active Workspace", selection: activeWorkspaceBinding) {
-        Text("All Projects").tag(SidebarState.Workspace.ID?.none)
+        Text(SidebarWorkspacePicker.allProjectsTitle).tag(SidebarState.Workspace.ID?.none)
         ForEach(workspaces) { workspace in
           Text(workspace.name).tag(SidebarState.Workspace.ID?.some(workspace.id))
         }
@@ -81,40 +138,8 @@ struct WorkspaceSwitcherView: View {
         }
       }
     } label: {
-      HStack(spacing: 6) {
-        Image(systemName: "rectangle.3.group")
-          .foregroundStyle(.secondary)
-          .accessibilityHidden(true)
-        Text(activeWorkspace?.name ?? "All Projects")
-          .fontWeight(.medium)
-          .lineLimit(1)
-        Spacer(minLength: 0)
-        Image(systemName: "chevron.up.chevron.down")
-          .font(.caption2)
-          .foregroundStyle(.secondary)
-          .accessibilityHidden(true)
-      }
-      .contentShape(.rect)
+      label(SidebarWorkspacePicker.title(activeWorkspaceName: activeWorkspace?.name))
     }
-    .menuStyle(.borderlessButton)
-    .menuIndicator(.hidden)
-    // The width has to go on the menu, not its label: AppKit renders the label
-    // and drops its SwiftUI layout, so `Spacer`, `maxWidth: .infinity` and
-    // `containerRelativeFrame` applied in there were all measured as no-ops and
-    // the click target stayed a content-sized island centered in the sidebar.
-    // A definite width on the menu itself does size the underlying button.
-    .containerRelativeFrame(.horizontal) { width, _ in width - 16 }
-    // Matches the 8pt inset `.listStyle(.sidebar)` gives its rows, so the
-    // switcher's edges line up with the rows beneath it.
-    .padding(.horizontal, 8)
-    .padding(.vertical, 6)
-    // The switcher is a `.safeAreaInset` over the List (see `SidebarView`), so
-    // rows scroll beneath it: paint the sidebar's own `.sidebar` material so it
-    // blends with the rows instead of reading as a lighter `.bar` strip, and
-    // stays opaque to the rows passing under it.
-    .background(SidebarMaterialBackground())
-    .overlay(alignment: .bottom) { Divider() }
-    .help("Switch, create, rename, or delete a workspace to filter the projects shown in the sidebar")
     .sheet(item: $prompt) { prompt in
       WorkspaceNamePromptView(
         title: prompt.title,
