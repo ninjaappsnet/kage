@@ -151,7 +151,8 @@ nonisolated struct RemoteFileWriteResult: Codable, Equatable, Sendable {
 nonisolated struct RemoteFileEmptyResult: Codable, Equatable, Sendable {}
 
 nonisolated struct RemoteFileGitStatusResult: Codable, Equatable, Sendable {
-  /// Raw `git status --porcelain=v1 -z` output (NUL-separated records).
+  /// Raw `git status --porcelain=v2 -z --untracked-files=all --ignored=matching
+  /// --no-renames` output (NUL-separated records), as the local files inspector reads it.
   var porcelain: String
 }
 

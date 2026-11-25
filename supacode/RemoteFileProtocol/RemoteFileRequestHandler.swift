@@ -169,7 +169,7 @@ nonisolated struct RemoteFileRequestHandler: Sendable {
     return RemoteFileWriteResult(mtime: RemoteFilePOSIX.milliseconds(written.st_mtimespec))
   }
 
-  /// Raw `git status --porcelain=v1 -z`. `--no-optional-locks` keeps git from
+  /// Raw `git status --porcelain=v2 -z` (see `gitStatusArguments`). `--no-optional-locks` keeps git from
   /// refreshing the index, which would fire an index event, a `treeChanged`,
   /// and so another status request, forever.
   func gitStatus(root: String) throws(RemoteFileError) -> RemoteFileGitStatusResult {
@@ -179,7 +179,7 @@ nonisolated struct RemoteFileRequestHandler: Sendable {
 
     let process = Process()
     process.executableURL = URL(filePath: gitExecutable)
-    process.arguments = ["--no-optional-locks", "-C", root, "status", "--porcelain=v1", "-z"]
+    process.arguments = Self.gitStatusArguments(root: root)
     process.environment = ProcessInfo.processInfo.environment.merging(
       ["LC_ALL": "C", "GIT_TERMINAL_PROMPT": "0"],
       uniquingKeysWith: { _, override in override }
@@ -217,6 +217,15 @@ nonisolated struct RemoteFileRequestHandler: Sendable {
       throw RemoteFileError(code: .inputOutput, message: "git status printed invalid UTF-8.")
     }
     return RemoteFileGitStatusResult(porcelain: text)
+  }
+
+  /// The exact argv of the local files inspector (`GitClient.fileStatus`), so
+  /// the viewer parses both with `GitStatusSnapshot.parse(porcelainV2:)`.
+  static func gitStatusArguments(root: String) -> [String] {
+    [
+      "-C", root, "--no-optional-locks", "status", "--porcelain=v2", "-z",
+      "--untracked-files=all", "--ignored=matching", "--no-renames",
+    ]
   }
 
   static func success<Result: Codable & Sendable>(_ id: Int, _ result: Result) -> Data {

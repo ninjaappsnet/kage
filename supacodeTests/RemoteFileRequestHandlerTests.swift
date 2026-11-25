@@ -160,11 +160,15 @@ nonisolated struct RemoteFileRequestHandlerTests {
     try await initProcess.runToExit()
     #expect(initProcess.terminationStatus == 0)
     try scratch.makeFile("repo/new file.txt", contents: "x")
+    try scratch.makeFile("repo/.gitignore", contents: "build/\n")
+    try scratch.makeFile("repo/build/out.o", contents: "x")
     let plain = try scratch.makeDirectory("plain")
 
     let handler = handler
     let status = try await Task.detached { try handler.gitStatus(root: repository) }.value
-    #expect(status.porcelain == "?? new file.txt\u{0}")
+    // Porcelain v2 with ignored directories as one entry: what the app's
+    // GitStatusSnapshot.parse(porcelainV2:) reads.
+    #expect(status.porcelain == "? .gitignore\u{0}? new file.txt\u{0}! build/\u{0}")
 
     let notGit = await Task.detached { () -> RemoteFileErrorCode? in
       do {
@@ -175,6 +179,15 @@ nonisolated struct RemoteFileRequestHandlerTests {
       }
     }.value
     #expect(notGit == .notGit)
+  }
+
+  @Test func gitStatusUsesTheSameArgumentsAsTheLocalFilesInspector() {
+    #expect(
+      RemoteFileRequestHandler.gitStatusArguments(root: "/r") == [
+        "-C", "/r", "--no-optional-locks", "status", "--porcelain=v2", "-z",
+        "--untracked-files=all", "--ignored=matching", "--no-renames",
+      ]
+    )
   }
 
   @Test func respondEncodesSuccessAndErrorLines() throws {
