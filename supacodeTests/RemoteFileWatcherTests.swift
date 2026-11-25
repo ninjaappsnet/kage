@@ -7,7 +7,7 @@ import Testing
 
 /// The watch-set manager behind `watch`: one stream over the top-most
 /// directories, rebuilt (debounced, without losing events) only when they change.
-struct RemoteFileWatcherTests {
+nonisolated struct RemoteFileWatcherTests {
   private struct Harness {
     let clock = TestClock()
     let source = FakeRemoteFileEventSource()

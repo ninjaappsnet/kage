@@ -4,7 +4,7 @@ import Testing
 @testable import supacode
 
 /// Pure classification of FSEvents directory events against a watch set.
-struct RemoteFileWatchSetTests {
+nonisolated struct RemoteFileWatchSetTests {
   private static func entry(_ path: String, canonical: String? = nil, gitDirectory: String? = nil)
     -> RemoteFileWatchEntry
   {

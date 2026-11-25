@@ -4,7 +4,7 @@ import Testing
 @testable import supacode
 
 /// The NDJSON shapes of protocol v1, exactly as the plan's table spells them.
-struct RemoteFileWireTests {
+nonisolated struct RemoteFileWireTests {
   private static func json(_ value: some Encodable) throws -> String {
     String(bytes: try RemoteFileWire.encodeLine(value), encoding: .utf8) ?? ""
   }

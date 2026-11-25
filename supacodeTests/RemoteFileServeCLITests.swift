@@ -7,7 +7,7 @@ import Testing
 /// Runs the bundled CLI's `host serve` as a subprocess, the way a viewer does
 /// over ssh: requests on stdin, responses and events on stdout, exit on EOF.
 @Suite(.serialized)
-struct RemoteFileServeCLITests {
+nonisolated struct RemoteFileServeCLITests {
   /// One serve process with line-level access to its stdout.
   private final class ServeProcess {
     let process = Process()

@@ -6,7 +6,9 @@ import Testing
 @testable import supacode
 
 /// Request routing of `kage host serve`: lines in, response and event lines out.
-struct RemoteFileServerTests {
+/// Nonisolated (as are the other remote-file suites): nothing here needs the
+/// main actor, and a full parallel run keeps it too busy to resume on time.
+nonisolated struct RemoteFileServerTests {
   private struct Harness {
     let source = FakeRemoteFileEventSource()
     let server: RemoteFileServer

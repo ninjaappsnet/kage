@@ -6,7 +6,7 @@ import Testing
 
 /// The host side of `kage host serve` against a real scratch directory.
 @Suite(.serialized)
-struct RemoteFileRequestHandlerTests {
+nonisolated struct RemoteFileRequestHandlerTests {
   private let handler = RemoteFileRequestHandler(kageVersion: "9.9.9")
 
   @Test func helloReportsProtocolAndKageVersions() {

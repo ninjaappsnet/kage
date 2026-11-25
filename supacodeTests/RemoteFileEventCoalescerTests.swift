@@ -7,7 +7,7 @@ import Testing
 
 /// Event pacing of `kage host serve`: `changed` batches over 200 ms,
 /// `treeChanged` at most once a second per root, `rescan` immediately.
-struct RemoteFileEventCoalescerTests {
+nonisolated struct RemoteFileEventCoalescerTests {
   @Test func changedPathsAreBatchedOver200Milliseconds() async {
     let clock = TestClock()
     let events = LockIsolated<[RemoteFileEvent]>([])
