@@ -144,4 +144,34 @@ struct FileViewerTabOpeningTests {
   @Test func tabTitleIsTheFileName() {
     #expect(FileViewerTabOpening.tabTitle(for: URL(filePath: "/tmp/repo/docs/guide.md")) == "guide.md")
   }
+
+  // MARK: - Carrying the source.
+
+  @Test func aLocalStateStillEncodesAsABarePath() throws {
+    let state = FileViewerContentState(filePath: "/tmp/repo/README.md")
+    let data = try JSONEncoder().encode(state)
+    // Layouts written before sources existed must keep decoding, and a local
+    // tab must keep writing the shape older builds can read.
+    #expect(String(bytes: data, encoding: .utf8) == "\"\\/tmp\\/repo\\/README.md\"")
+    #expect(try JSONDecoder().decode(FileViewerContentState.self, from: data).sourceID == .local)
+  }
+
+  @Test func aRemoteStateRoundTripsItsSource() throws {
+    let remote = FileSystemSourceID(rawValue: "remote:mini")
+    let state = FileViewerContentState(filePath: "/Volumes/SSD/repo/README.md", sourceID: remote)
+    let decoded = try JSONDecoder().decode(FileViewerContentState.self, from: JSONEncoder().encode(state))
+    #expect(decoded == state)
+    #expect(decoded.sourceID == remote)
+  }
+
+  @Test func theSamePathOnAnotherSourceIsADifferentTab() {
+    let tab = viewerTab("/tmp/repo/README.md")
+    let layout = layout(panes: [[tab]])
+
+    let remote = FileSystemSourceID(rawValue: "remote:mini")
+    #expect(
+      FileViewerTabOpening.existingTab(for: URL(filePath: "/tmp/repo/README.md"), source: remote, in: layout) == nil)
+    #expect(
+      FileViewerTabOpening.existingTab(for: URL(filePath: "/tmp/repo/README.md"), source: .local, in: layout) == tab.id)
+  }
 }

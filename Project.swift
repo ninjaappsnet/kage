@@ -31,6 +31,7 @@ let appBuildableFolders: [BuildableFolder] = [
   "supacode/Features",
   "supacode/Infrastructure",
   "supacode/Support",
+  "supacode/RemoteFileProtocol",
 ]
 
 let appDependencies: [TargetDependency] = [
@@ -193,6 +194,7 @@ let project = Project(
       infoPlist: .default,
       buildableFolders: [
         "supacode-cli",
+        "supacode/RemoteFileProtocol",
       ],
       dependencies: [
         .external(name: "ArgumentParser"),
@@ -317,6 +319,9 @@ let project = Project(
         ],
         debug: [
           "CODE_SIGN_ENTITLEMENTS": "supacode/supacodeDebug.entitlements",
+          // Own identity for Debug builds: an ad-hoc build under the release id
+          // takes over the installed Kage's privacy grants (DebugBundleIdentifierTests).
+          "PRODUCT_BUNDLE_IDENTIFIER": "net.ninjaapps.kage.debug",
         ],
         release: [
           "CODE_SIGN_ENTITLEMENTS": "supacode/supacode.entitlements",

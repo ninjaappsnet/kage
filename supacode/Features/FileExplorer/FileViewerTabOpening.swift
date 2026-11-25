@@ -13,11 +13,14 @@ enum FileViewerTabOpening {
   /// standardized paths is what keeps a second buffer from being minted for a
   /// file that is already open — two live buffers over one path diverge, and
   /// whichever saves last silently clobbers the other.
-  static func existingTab(for url: URL, in layout: PaneLayout) -> TabID? {
-    let target = FileViewerContentState(fileURL: url).filePath
+  ///
+  /// The same path on another machine is a different file, so the source is
+  /// part of the match.
+  static func existingTab(for url: URL, source: FileSystemSourceID = .local, in layout: PaneLayout) -> TabID? {
+    let target = FileViewerContentState(fileURL: url, sourceID: source)
     for pane in layout.panes {
       for tab in pane.tabs {
-        guard case .fileViewer(let state) = tab.content.state, state.filePath == target else { continue }
+        guard case .fileViewer(let state) = tab.content.state, state == target else { continue }
         return tab.id
       }
     }
@@ -31,10 +34,11 @@ enum FileViewerTabOpening {
   }
 
   /// Builds the live content for a viewer tab. Called from the layout's content
-  /// factory, which is the only place allowed to construct content.
+  /// factory, which is the only place allowed to construct content. The tab's
+  /// source comes back from its persisted id.
   @MainActor
   static func makeContent(id: ContentID, state: FileViewerContentState) -> any TabContent {
-    FileViewerContent(id: id, fileURL: state.fileURL)
+    FileViewerContent(id: id, fileURL: state.fileURL, source: FileSystemSources.source(for: state.sourceID))
   }
 }
 
@@ -43,13 +47,22 @@ extension WorktreeTerminalManager {
   /// for the same file rather than minting a rival buffer. Placement follows the
   /// same rule as the open-file script hook, so the app has one answer for
   /// "I opened a file" regardless of which path produced it.
-  func openFileInViewerTab(_ url: URL, in worktree: Worktree) {
+  ///
+  /// `source` is where the file lives (this Mac by default). A remote source is
+  /// registered with `FileSystemSources` so the content factory, which only sees
+  /// the persisted state, can find it again.
+  func openFileInViewerTab(
+    _ url: URL,
+    in worktree: Worktree,
+    source: any FileSystemSource = LocalFileSystemSource()
+  ) {
     guard let layout = layoutState(for: worktree.id)?.layout else {
       // A layout-less worktree has nowhere to put a tab; the terminal bootstrap
       // creates one, and the user can open the file again once it exists.
       return
     }
-    if let existing = FileViewerTabOpening.existingTab(for: url, in: layout) {
+    FileSystemSources.register(source)
+    if let existing = FileViewerTabOpening.existingTab(for: url, source: source.id, in: layout) {
       sendLayout(worktree.id, .selectTab(id: existing))
       if let pane = layout.pane(containingTab: existing) {
         sendLayout(worktree.id, .focusPane(.pane(pane.id)))
@@ -78,7 +91,7 @@ extension WorktreeTerminalManager {
       tabID: TabID(rawValue: contentID.rawValue),
       contentID: contentID,
       title: FileViewerTabOpening.tabTitle(for: url),
-      content: .fileViewer(FileViewerContentState(fileURL: url)),
+      content: .fileViewer(FileViewerContentState(fileURL: url, sourceID: source.id)),
       geometry: ContentRuntime.liveValue.spawnGeometry(near: anchorContent, fallback: anchorContent)
     )
 

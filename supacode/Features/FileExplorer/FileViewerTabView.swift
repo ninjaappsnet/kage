@@ -10,6 +10,9 @@ import SwiftUI
 /// dialog this view raises.
 struct FileViewerTabView: View {
   @Bindable var model: FileViewerModel
+  /// Set when the viewer is a pane rather than a tab (a remote worktree's
+  /// right-hand viewer): the header then carries its own close button.
+  var onClose: (() -> Void)?
 
   /// Gates the real renderer behind one runloop turn so the spinner paints first.
   @State private var isContentMounted = false
@@ -77,7 +80,7 @@ struct FileViewerTabView: View {
       }
       if model.isEditable {
         Button {
-          model.save()
+          Task { await model.save() }
         } label: {
           Image(systemName: "square.and.arrow.down")
             .accessibilityLabel("Save")
@@ -88,13 +91,21 @@ struct FileViewerTabView: View {
         .help("Save (⌘S)")
       }
       Button {
-        model.reloadFromDisk()
+        Task { await model.reloadFromDisk() }
       } label: {
         Image(systemName: "arrow.clockwise")
           .accessibilityLabel("Reload from Disk")
       }
       .buttonStyle(.borderless)
       .help("Reload from Disk")
+      if let onClose {
+        Button(action: onClose) {
+          Image(systemName: "xmark")
+            .accessibilityLabel("Close File")
+        }
+        .buttonStyle(.borderless)
+        .help("Close File (Esc)")
+      }
     }
     .imageScale(.medium)
     .padding(.horizontal, 10)
@@ -109,8 +120,8 @@ struct FileViewerTabView: View {
       Text("This file changed on disk.")
         .font(.callout)
       Spacer(minLength: 4)
-      Button("Reload") { model.reloadFromDisk() }
-      Button("Overwrite") { model.overwriteSave() }
+      Button("Reload") { Task { await model.reloadFromDisk() } }
+      Button("Overwrite") { Task { await model.overwriteSave() } }
     }
     .padding(.horizontal, 10)
     .padding(.vertical, 6)
@@ -126,7 +137,7 @@ struct FileViewerTabView: View {
         .font(.callout)
         .lineLimit(2)
       Spacer(minLength: 4)
-      Button("Retry") { model.save() }
+      Button("Retry") { Task { await model.save() } }
     }
     .padding(.horizontal, 10)
     .padding(.vertical, 6)
@@ -176,13 +187,15 @@ struct FileViewerTabView: View {
     switch model.loadState {
     case .empty:
       placeholder("No File Selected", systemImage: "doc")
+    case .loading:
+      preparingPlaceholder
     case .loaded:
       if model.isMarkdown, model.mode == .rendered {
         MarkdownPreview(markdown: model.text)
       } else if model.isHTML, model.mode == .rendered, let url = model.fileURL {
-        // Rendered from disk, not from `model.text`: the page pulls its own
-        // stylesheets and scripts, which only resolve relative to the real file.
-        HTMLPreview(fileURL: url, isTrusted: model.isHTMLTrusted) { model.trustHTML() }
+        // Rendered from the source, not from `model.text`: the page pulls its
+        // own stylesheets and scripts, which only resolve relative to the real file.
+        HTMLPreview(fileURL: url, source: model.source, isTrusted: model.isHTMLTrusted) { model.trustHTML() }
       } else {
         HighlightedCodeEditor(
           text: $model.text,
@@ -192,8 +205,8 @@ struct FileViewerTabView: View {
         .id(model.fileURL)
       }
     case .media(let kind):
-      if let url = model.fileURL {
-        MediaPreview(url: url, kind: kind)
+      if let data = model.mediaData {
+        MediaPreview(data: data, kind: kind, onOpenInDefaultApp: openInDefaultApp)
       }
     case .binary:
       unsupported("Can't preview a binary file", systemImage: "doc.questionmark")
@@ -215,11 +228,17 @@ struct FileViewerTabView: View {
   private func unsupported(_ title: String, systemImage: String) -> some View {
     VStack(spacing: 12) {
       ContentUnavailableView(title, systemImage: systemImage)
-      if let url = model.fileURL {
-        Button("Open in Default App") { NSWorkspace.shared.open(url) }
+      if let openInDefaultApp {
+        Button("Open in Default App", action: openInDefaultApp)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  /// Only a file on this Mac can be handed to a default app.
+  private var openInDefaultApp: (() -> Void)? {
+    guard model.isLocal, let url = model.fileURL else { return nil }
+    return { NSWorkspace.shared.open(url) }
   }
 
   private static let byteFormatter: ByteCountFormatter = {

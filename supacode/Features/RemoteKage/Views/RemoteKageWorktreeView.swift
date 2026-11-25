@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Sharing
 import SupacodeSettingsShared
 import SwiftUI
 
@@ -43,6 +44,16 @@ private struct RemoteKageWorktreeContent: View {
   let selection: RemoteKageSelection
   let worktree: HostSnapshot.Worktree
   let snapshot: HostSnapshot?
+  /// Shared with local worktrees, so ⌥⌘E means the same thing everywhere.
+  @Shared(.appStorage("fileExplorerVisible")) private var isFileExplorerVisible = false
+  @Shared(.settingsFile) private var settingsFile
+  /// One viewer per remote worktree, so switching worktrees and back keeps an
+  /// unsaved buffer instead of dropping it.
+  @State private var viewers: [RemoteKageSelection: FileViewerModel] = [:]
+  /// A file whose opening would replace unsaved edits, awaiting confirmation.
+  @State private var pendingFileToOpen: URL?
+  /// Debug driver only (`explorer-root:`).
+  @State private var debugExplorerRoot: URL?
 
   var body: some View {
     let selectedTabID = RemoteKageWorktreeDetail.selectedTabID(
@@ -56,63 +67,101 @@ private struct RemoteKageWorktreeContent: View {
       attachedTabs: store.attachedTabs,
       zmxPath: snapshot?.zmxPath
     )
-    VStack(spacing: 0) {
-      RemoteKageWorktreeHeader(
-        title: RemoteKageWorktreeDetail.title(
+    let viewer = viewers[selection]
+    let needsFiles = RemoteKageFiles.needsConnection(
+      isExplorerVisible: isFileExplorerVisible,
+      isViewerOpen: viewer != nil
+    )
+    // Created (not opened) on demand; the session opens only while held below.
+    let source = needsFiles ? RemoteKageFileSessions.shared.source(for: host, reportedCLIPath: snapshot?.cliPath) : nil
+    HStack(spacing: 0) {
+      if isFileExplorerVisible, let source {
+        RemoteKageExplorerColumn(
           hostName: host.name,
-          snapshot: snapshot,
-          worktreeID: selection.worktreeID
-        ),
-        hostName: host.name,
-        newTab: { command in store.send(.newTab(selection, command: command)) }
-      )
-      RemoteKageTabStrip(
-        hostID: host.id,
-        tabs: worktree.tabs,
-        selectedTabID: selectedTabID,
-        attachedTabs: store.attachedTabs,
-        select: { tabID in store.send(.selectTab(selection, tabID: tabID)) }
-      )
-      Divider()
-      ZStack {
-        // Every attached tab stays mounted, hidden when not shown, so switching
-        // tabs never drops its SSH session. Unmounting one detaches it.
-        ForEach(mounted) { terminal in
-          let isShown = terminal.key.tabID == selectedTabID
-          RemoteKageAttachedTerminalView(
-            host: host,
-            zmxPath: terminal.zmxPath,
-            session: terminal.session,
-            onExit: { store.send(.detachTab(terminal.key)) }
-          )
-          .opacity(isShown ? 1 : 0)
-          .allowsHitTesting(isShown)
-          .accessibilityHidden(!isShown)
-        }
-        if let selectedTab {
-          let key = RemoteKageTabKey(hostID: host.id, tabID: selectedTab.id)
-          if !mounted.contains(where: { $0.key == key }) {
-            RemoteKageScreenPreview(screen: store.screens[key])
-          }
-        } else {
-          ContentUnavailableView(
-            "No Tabs",
-            systemImage: "terminal",
-            description: Text("This worktree has no terminal tabs on \(host.name). Start one with New Tab.")
-          )
-        }
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      if let selectedTab {
-        let key = RemoteKageTabKey(hostID: host.id, tabID: selectedTab.id)
-        Divider()
-        RemoteKageTabActionBar(
-          hostName: host.name,
-          tab: selectedTab,
-          isAttached: mounted.contains { $0.key == key },
-          availability: RemoteKageAttachAvailability.resolve(zmxPath: snapshot?.zmxPath, tab: selectedTab),
-          send: { store.send($0(key)) }
+          source: source,
+          rootURL: debugExplorerRoot
+            ?? RemoteKageFiles.explorerRootURL(
+              tabs: worktree.tabs,
+              selectedTabID: selectedTabID,
+              worktreePath: worktree.path
+            ),
+          openFileURL: viewer?.fileURL,
+          status: RemoteKageFileSessions.shared.status(for: host.id),
+          onOpenFile: { openFile($0, source: source) },
+          onClose: toggleFileExplorer
         )
+        .id(selection)
+        .transition(.move(edge: .leading).combined(with: .opacity))
+      }
+      VStack(spacing: 0) {
+        RemoteKageWorktreeHeader(
+          title: RemoteKageWorktreeDetail.title(
+            hostName: host.name,
+            snapshot: snapshot,
+            worktreeID: selection.worktreeID
+          ),
+          hostName: host.name,
+          isFileExplorerVisible: isFileExplorerVisible,
+          fileExplorerShortcut: AppShortcuts.toggleFileExplorer.effective(from: settingsFile.global.shortcutOverrides),
+          toggleFileExplorer: toggleFileExplorer,
+          newTab: { command in store.send(.newTab(selection, command: command)) }
+        )
+        RemoteKageTabStrip(
+          hostID: host.id,
+          tabs: worktree.tabs,
+          selectedTabID: selectedTabID,
+          attachedTabs: store.attachedTabs,
+          select: { tabID in store.send(.selectTab(selection, tabID: tabID)) }
+        )
+        Divider()
+        HStack(spacing: 0) {
+          VStack(spacing: 0) {
+            ZStack {
+              // Every attached tab stays mounted, hidden when not shown, so switching
+              // tabs never drops its SSH session. Unmounting one detaches it.
+              ForEach(mounted) { terminal in
+                let isShown = terminal.key.tabID == selectedTabID
+                RemoteKageAttachedTerminalView(
+                  host: host,
+                  zmxPath: terminal.zmxPath,
+                  session: terminal.session,
+                  onExit: { store.send(.detachTab(terminal.key)) }
+                )
+                .opacity(isShown ? 1 : 0)
+                .allowsHitTesting(isShown)
+                .accessibilityHidden(!isShown)
+              }
+              if let selectedTab {
+                let key = RemoteKageTabKey(hostID: host.id, tabID: selectedTab.id)
+                if !mounted.contains(where: { $0.key == key }) {
+                  RemoteKageScreenPreview(screen: store.screens[key])
+                }
+              } else {
+                ContentUnavailableView(
+                  "No Tabs",
+                  systemImage: "terminal",
+                  description: Text("This worktree has no terminal tabs on \(host.name). Start one with New Tab.")
+                )
+              }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if let selectedTab {
+              let key = RemoteKageTabKey(hostID: host.id, tabID: selectedTab.id)
+              Divider()
+              RemoteKageTabActionBar(
+                hostName: host.name,
+                tab: selectedTab,
+                isAttached: mounted.contains { $0.key == key },
+                availability: RemoteKageAttachAvailability.resolve(zmxPath: snapshot?.zmxPath, tab: selectedTab),
+                send: { store.send($0(key)) }
+              )
+            }
+          }
+          if let viewer {
+            RemoteKageFileViewerPane(model: viewer, onClose: { viewers[selection] = nil })
+              .transition(.move(edge: .trailing).combined(with: .opacity))
+          }
+        }
       }
     }
     .task(id: selection) {
@@ -126,16 +175,121 @@ private struct RemoteKageWorktreeContent: View {
       guard let newValue, store.selectedTabByWorktree[selection] != newValue else { return }
       store.send(.selectTab(selection, tabID: newValue))
     }
+    // Holds the host's file channel while the explorer or the viewer is on
+    // screen; leaving (or closing both) releases it, and it closes 30 s later.
+    .task(id: RemoteKageFilesLease(hostID: host.id, isNeeded: needsFiles)) {
+      guard let source else { return }
+      await source.session.hold()
+    }
+    .confirmationDialog(
+      "Discard unsaved changes to \(viewer?.displayName ?? "the open file")?",
+      isPresented: Binding(
+        get: { pendingFileToOpen != nil },
+        set: { if !$0 { pendingFileToOpen = nil } }
+      )
+    ) {
+      Button("Discard Changes", role: .destructive) {
+        if let url = pendingFileToOpen, let viewer {
+          Task { await viewer.open(url) }
+        }
+        pendingFileToOpen = nil
+      }
+      Button("Cancel", role: .cancel) { pendingFileToOpen = nil }
+    } message: {
+      Text("Opening another file replaces the edits in the viewer.")
+    }
+    #if DEBUG
+      .onChange(of: RemoteKageFilesDebugCommands.shared.latest?.sequence) { _, _ in
+        guard let command = RemoteKageFilesDebugCommands.shared.latest?.command else { return }
+        runDebugCommand(command)
+      }
+    #endif
   }
+
+  private func toggleFileExplorer() {
+    withAnimation(.easeOut(duration: 0.2)) {
+      $isFileExplorerVisible.withLock { $0.toggle() }
+    }
+  }
+
+  private func openFile(_ url: URL, source: RemoteFileSystemSource) {
+    let viewer = viewers[selection]
+    switch RemoteKageFileViewerOpening.decide(
+      requested: url,
+      shown: viewer?.fileURL,
+      isDirty: viewer?.isDirty ?? false
+    ) {
+    case .alreadyShown:
+      return
+    case .confirmDiscard:
+      pendingFileToOpen = url
+    case .open:
+      let model = viewer ?? FileViewerModel(source: source)
+      if viewer == nil {
+        withAnimation(.easeOut(duration: 0.2)) { viewers[selection] = model }
+      }
+      Task { await model.open(url) }
+    }
+  }
+
+  #if DEBUG
+    private func runDebugCommand(_ command: RemoteKageFilesDebugCommand) {
+      let viewer = viewers[selection]
+      switch command.verb {
+      case "explorer":
+        $isFileExplorerVisible.withLock { $0 = command.argument != "off" }
+      case "explorer-root":
+        debugExplorerRoot =
+          command.argument.isEmpty ? nil : URL(filePath: command.argument, directoryHint: .isDirectory)
+      case "open":
+        openFile(
+          URL(filePath: command.argument),
+          source: RemoteKageFileSessions.shared.source(for: host, reportedCLIPath: snapshot?.cliPath)
+        )
+      case "append":
+        viewer?.text += command.argument
+      case "save":
+        if let viewer { Task { await viewer.save() } }
+      case "reload":
+        if let viewer { Task { await viewer.reloadFromDisk() } }
+      case "close":
+        viewers[selection] = nil
+      default:
+        break
+      }
+    }
+  #endif
+}
+
+/// Identity of the file channel hold: re-evaluated when the host changes or
+/// when the files UI appears / goes away.
+private struct RemoteKageFilesLease: Hashable {
+  let hostID: RemoteKageHost.ID
+  let isNeeded: Bool
 }
 
 private struct RemoteKageWorktreeHeader: View {
   let title: String
   let hostName: String
+  let isFileExplorerVisible: Bool
+  let fileExplorerShortcut: AppShortcut?
+  let toggleFileExplorer: () -> Void
   let newTab: (_ command: String?) -> Void
 
   var body: some View {
     HStack(spacing: 8) {
+      Button(action: toggleFileExplorer) {
+        Image(systemName: "folder")
+          .symbolVariant(isFileExplorerVisible ? .fill : .none)
+          .accessibilityLabel(isFileExplorerVisible ? "Hide File Explorer" : "Show File Explorer")
+      }
+      .buttonStyle(.borderless)
+      .help(
+        AppShortcut.helpText(
+          isFileExplorerVisible ? "Hide the files of \(hostName)" : "Browse the files of \(hostName)",
+          shortcut: fileExplorerShortcut
+        )
+      )
       Image(systemName: "desktopcomputer")
         .foregroundStyle(.secondary)
         .accessibilityHidden(true)

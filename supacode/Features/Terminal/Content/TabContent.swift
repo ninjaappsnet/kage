@@ -196,6 +196,9 @@ final class TerminalContent: TabContent {
 
   var renderer: NSView? { surfaceView }
 
+  /// The live shell-reported pwd, else the last recorded one; nil when unknown.
+  var reportedWorkingDirectory: String? { surfaceView?.bridge.state.pwd ?? state.workingDirectory }
+
   // Hibernated terminals have no live surface, so nothing is interruptible.
   // A locked tab (completed blocking script) parks its runner alive, so
   // Ghostty keeps reporting confirm-quit for work nothing can lose; the lock

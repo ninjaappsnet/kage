@@ -5,7 +5,7 @@ struct HostCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "host",
     abstract: "Describe this Kage to another Kage.",
-    subcommands: [Snapshot.self]
+    subcommands: [Snapshot.self, Serve.self]
   )
 }
 

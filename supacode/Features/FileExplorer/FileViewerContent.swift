@@ -16,7 +16,7 @@ final class FileViewerContent: TabContent {
 
   /// Instance-owned so the buffer, dirty state, and view mode survive tab
   /// switches — the renderer is only built once and reused.
-  let model = FileViewerModel()
+  let model: FileViewerModel
 
   private let fileURL: URL
   private lazy var viewerChrome = FileViewerTabChrome(model: model)
@@ -24,9 +24,10 @@ final class FileViewerContent: TabContent {
 
   nonisolated deinit {}
 
-  init(id: ContentID, fileURL: URL) {
+  init(id: ContentID, fileURL: URL, source: any FileSystemSource = LocalFileSystemSource()) {
     self.id = id
     self.fileURL = fileURL
+    model = FileViewerModel(source: source)
   }
 
   var chrome: (any TabChrome)? { viewerChrome }
@@ -46,8 +47,7 @@ final class FileViewerContent: TabContent {
   /// behind the viewer's own conflict banner. Reporting the buffer's real state
   /// rather than "I tried" is what keeps the close from proceeding anyway.
   func saveUnsavedWork() -> Bool {
-    model.save()
-    return !model.isDirty
+    model.saveBeforeClose()
   }
 
   /// The renderer is the whole content; nothing survives it to be killed.
@@ -60,7 +60,9 @@ final class FileViewerContent: TabContent {
 
   func startSession(at geometry: ContentGeometry) {
     guard hostingView == nil else { return }
-    model.open(fileURL)
+    let model = model
+    let fileURL = fileURL
+    Task { await model.open(fileURL) }
     let view = NSHostingView(rootView: FileViewerTabView(model: model))
     // The renderer is pinned to all four edges of its pane, so any intrinsic
     // size it reports climbs the constraint chain into `NSWindow.contentMinSize`
@@ -81,7 +83,7 @@ final class FileViewerContent: TabContent {
   }
 
   func snapshot() -> ContentSnapshot {
-    ContentSnapshot(id: id, state: .fileViewer(FileViewerContentState(fileURL: fileURL)))
+    ContentSnapshot(id: id, state: .fileViewer(FileViewerContentState(fileURL: fileURL, sourceID: model.source.id)))
   }
 }
 

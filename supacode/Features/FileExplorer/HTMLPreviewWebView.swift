@@ -12,11 +12,12 @@ import WebKit
 /// non-persistent data store, and navigation/UI delegates.
 struct HTMLPreviewWebView: NSViewRepresentable {
   let fileURL: URL
+  let source: any FileSystemSource
   let isTrusted: Bool
   let onBlockedResource: (String) -> Void
 
   func makeCoordinator() -> Coordinator {
-    Coordinator(fileURL: fileURL, isTrusted: isTrusted)
+    Coordinator(fileURL: fileURL, source: source, isTrusted: isTrusted)
   }
 
   func makeNSView(context: Context) -> WKWebView {
@@ -61,14 +62,15 @@ struct HTMLPreviewWebView: NSViewRepresentable {
 
     nonisolated deinit {}
 
-    init(fileURL: URL, isTrusted: Bool) {
+    init(fileURL: URL, source: any FileSystemSource = LocalFileSystemSource(), isTrusted: Bool) {
       // The document's own directory is the root, not the worktree: a report
       // reaches its sibling stylesheet and nothing above it, so `.env` and
       // `.git` are out of scope before any denylist is consulted.
       entryFileName = fileURL.lastPathComponent
       handler = HTMLPreviewSchemeHandler(
         rootDirectory: fileURL.deletingLastPathComponent(),
-        entryFileName: fileURL.lastPathComponent
+        entryFileName: fileURL.lastPathComponent,
+        source: source
       )
       appliedTrust = isTrusted
       super.init()

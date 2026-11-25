@@ -8,6 +8,10 @@ import SupacodeSettingsShared
 struct RemoteKageSidebarModel: Equatable {
   var hosts: [Host]
 
+  /// Some agent on any host waits for input (shown on the "Remote Hosts"
+  /// group header while it is collapsed).
+  var isAwaitingInput: Bool { hosts.contains(where: \.isAwaitingInput) }
+
   struct Host: Equatable, Identifiable {
     let id: RemoteKageHost.ID
     var name: String
@@ -31,6 +35,11 @@ struct RemoteKageSidebarModel: Equatable {
     /// they follow workspace groups, nil when the host has no workspaces.
     var title: String?
     var repositories: [Repository]
+
+    /// Some worktree in the group waits for input (shown on a collapsed group).
+    var isAwaitingInput: Bool {
+      repositories.contains { $0.worktrees.contains(where: \.isAwaitingInput) }
+    }
   }
 
   struct Repository: Equatable, Identifiable {
@@ -72,10 +81,7 @@ struct RemoteKageSidebarModel: Equatable {
         let hostState = hostStates[host.id] ?? RemoteKageFeature.HostState()
         let snapshot = hostState.lastSnapshot
         let groups = snapshot.map { groups(for: $0, hostID: host.id) }
-        let isAwaitingInput =
-          groups?.contains { group in
-            group.repositories.contains { $0.worktrees.contains(where: \.isAwaitingInput) }
-          } ?? false
+        let isAwaitingInput = groups?.contains(where: \.isAwaitingInput) ?? false
         return Host(
           id: host.id,
           name: host.name,
@@ -85,6 +91,23 @@ struct RemoteKageSidebarModel: Equatable {
         )
       }
     )
+  }
+
+  /// What must be open for a selected remote worktree to be visible: its
+  /// host and, once the snapshot is known, the workspace holding it.
+  struct RevealTarget: Equatable {
+    var hostID: RemoteKageHost.ID
+    var groupID: Group.GroupID?
+  }
+
+  func revealTarget(for selection: RemoteKageSelection?) -> RevealTarget? {
+    guard let selection, let host = hosts.first(where: { $0.id == selection.hostID }) else { return nil }
+    let group = host.groups?.first { group in
+      group.repositories.contains { repository in
+        repository.worktrees.contains { $0.selection == selection }
+      }
+    }
+    return RevealTarget(hostID: host.id, groupID: group?.id)
   }
 
   /// The host's own grouping: its workspaces in switcher order (empty ones

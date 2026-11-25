@@ -141,6 +141,8 @@ struct SupacodeApp: App {
   @MainActor init() {
     // Inert unless SUPACODE_MD_SMOKE=1; guards a Release-only MarkdownUI miscompile.
     MarkdownRenderSmokeCheck.runIfRequested()
+    // Inert unless KAGE_DEBUG_SNAPSHOT_DIR is set in a Debug build (dev sandbox).
+    DebugWindowSnapshot.installIfRequested()
     NSWindow.allowsAutomaticWindowTabbing = false
     UserDefaults.standard.set(200, forKey: "NSInitialToolTipDelay")
     // Relocate config out of `~/.supacode` into `~/.config/supacode` and move

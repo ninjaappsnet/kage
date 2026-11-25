@@ -1,58 +1,85 @@
 import ComposableArchitecture
+import Sharing
 import SupacodeSettingsShared
 import SwiftUI
 
-/// One collapsible sidebar section per remote Kage host, appended after the
-/// local sections inside the sidebar's `List`. Reads only `RemoteKageFeature`
-/// state, through the pure `RemoteKageSidebarModel`, so a poll tick never
+/// The "Remote Hosts" group header and, under it, one collapsible sidebar
+/// section per remote Kage host, appended after the local sections inside the
+/// sidebar's `List`. Each host's workspaces collapse too; open / closed state
+/// persists (`RemoteKageSidebarExpansion`) and never enters `SidebarStructure`.
+/// Reads only `RemoteKageFeature` state, through the pure `RemoteKageSidebarModel`, so a poll tick never
 /// invalidates a local row. Worktree rows tag `SidebarSelection.remoteKage`
 /// and share the list's selection with the local rows.
 struct RemoteKageSidebarSections: View {
   let store: StoreOf<RemoteKageFeature>
-  @State private var collapsedHostIDs: Set<RemoteKageHost.ID> = []
+  @Shared(.sidebarRemoteHostsExpanded) private var isRemoteHostsExpanded: Bool
+  @Shared(.remoteKageSidebarExpansion) private var expansion: RemoteKageSidebarExpansion
 
   var body: some View {
     let model = RemoteKageSidebarModel.make(hosts: store.hosts, hostStates: store.hostStates)
-    ForEach(model.hosts) { host in
-      RemoteKageHostSection(host: host, isExpanded: expansionBinding(for: host.id))
+    if SidebarMachineGroups.showsGroupHeaders(hostCount: model.hosts.count) {
+      SidebarMachineGroupHeader(
+        group: .remoteHosts,
+        isExpanded: Binding($isRemoteHostsExpanded),
+        summary: SidebarMachineGroup.remoteHosts.summary(count: model.hosts.count),
+        isAwaitingInput: model.isAwaitingInput
+      )
+      if isRemoteHostsExpanded {
+        ForEach(model.hosts) { host in
+          RemoteKageHostSection(
+            host: host,
+            isHostExpanded: hostBinding(for: host.id),
+            groupBinding: { groupBinding(host: host.id, group: $0) }
+          )
+        }
+      }
     }
   }
 
-  private func expansionBinding(for hostID: RemoteKageHost.ID) -> Binding<Bool> {
+  private func hostBinding(for hostID: RemoteKageHost.ID) -> Binding<Bool> {
     Binding(
-      get: { !collapsedHostIDs.contains(hostID) },
-      set: { isExpanded in
-        if isExpanded {
-          collapsedHostIDs.remove(hostID)
-        } else {
-          collapsedHostIDs.insert(hostID)
-        }
-      }
+      get: { expansion.isHostExpanded(hostID) },
+      set: { isExpanded in $expansion.withLock { $0.setHost(hostID, expanded: isExpanded) } }
+    )
+  }
+
+  private func groupBinding(
+    host hostID: RemoteKageHost.ID,
+    group: RemoteKageSidebarModel.Group.GroupID
+  ) -> Binding<Bool> {
+    Binding(
+      get: { expansion.isGroupExpanded(host: hostID, group: group) },
+      set: { isExpanded in $expansion.withLock { $0.setGroup(host: hostID, group: group, expanded: isExpanded) } }
     )
   }
 }
 
 private struct RemoteKageHostSection: View {
   let host: RemoteKageSidebarModel.Host
-  @Binding var isExpanded: Bool
+  @Binding var isHostExpanded: Bool
+  let groupBinding: (RemoteKageSidebarModel.Group.GroupID) -> Binding<Bool>
 
   var body: some View {
-    Section(isExpanded: $isExpanded) {
-      if let groups = host.groups {
-        if groups.isEmpty {
-          Text("No projects on this host")
-            .appFont(.footnote)
-            .foregroundStyle(.secondary)
-            .moveDisabled(true)
+    // The band is an untagged header row rather than the `Section` header:
+    // a sidebar `Section` header cannot carry a filled band, and a row keeps
+    // the whole band clickable and the awaiting mark visible while collapsed.
+    Section {
+      RemoteKageHostHeaderRow(host: host, isExpanded: $isHostExpanded)
+      if isHostExpanded {
+        if let groups = host.groups {
+          if groups.isEmpty {
+            Text("No projects on this host")
+              .appFont(.footnote)
+              .foregroundStyle(.secondary)
+              .moveDisabled(true)
+          }
+          ForEach(groups) { group in
+            RemoteKageGroupRows(hostName: host.name, group: group, isExpanded: groupBinding(group.id))
+          }
+        } else {
+          RemoteKageHostStatusRow(indicator: host.indicator)
         }
-        ForEach(groups) { group in
-          RemoteKageGroupRows(hostName: host.name, group: group)
-        }
-      } else {
-        RemoteKageHostStatusRow(indicator: host.indicator)
       }
-    } header: {
-      RemoteKageHostHeaderView(host: host)
     }
   }
 }
@@ -60,42 +87,53 @@ private struct RemoteKageHostSection: View {
 private struct RemoteKageGroupRows: View {
   let hostName: String
   let group: RemoteKageSidebarModel.Group
+  @Binding var isExpanded: Bool
 
   var body: some View {
     if let title = group.title {
-      Text(title)
-        .appFont(.caption, weight: .medium)
-        .foregroundStyle(.tertiary)
-        .lineLimit(1)
-        .padding(.top, 4)
-        .moveDisabled(true)
-        .accessibilityAddTraits(.isHeader)
+      RemoteKageWorkspaceHeader(
+        title: title,
+        isExpanded: $isExpanded,
+        isAwaitingInput: group.isAwaitingInput
+      )
     }
-    ForEach(group.repositories) { repository in
-      if let worktree = repository.soleWorktree {
+    // A host without workspaces has one untitled group that cannot collapse.
+    if isExpanded || group.title == nil {
+      ForEach(group.repositories) { repository in
+        RemoteKageRepositoryRows(hostName: hostName, repository: repository)
+      }
+    }
+  }
+}
+
+private struct RemoteKageRepositoryRows: View {
+  let hostName: String
+  let repository: RemoteKageSidebarModel.Repository
+
+  var body: some View {
+    if let worktree = repository.soleWorktree {
+      RemoteKageWorktreeRowView(
+        hostName: hostName,
+        repositoryName: repository.name,
+        title: repository.name,
+        subtitle: repository.isGitRepository ? worktree.name : nil,
+        tint: repository.color,
+        worktree: worktree
+      )
+      .tag(SidebarSelection.remoteKage(worktree.selection))
+    } else {
+      RemoteKageRepositoryLabel(repository: repository)
+      ForEach(repository.worktrees) { worktree in
         RemoteKageWorktreeRowView(
           hostName: hostName,
           repositoryName: repository.name,
-          title: repository.name,
-          subtitle: repository.isGitRepository ? worktree.name : nil,
-          tint: repository.color,
+          title: worktree.name,
+          subtitle: nil,
+          tint: nil,
           worktree: worktree
         )
+        .padding(.leading, 12)
         .tag(SidebarSelection.remoteKage(worktree.selection))
-      } else {
-        RemoteKageRepositoryLabel(repository: repository)
-        ForEach(repository.worktrees) { worktree in
-          RemoteKageWorktreeRowView(
-            hostName: hostName,
-            repositoryName: repository.name,
-            title: worktree.name,
-            subtitle: nil,
-            tint: nil,
-            worktree: worktree
-          )
-          .padding(.leading, 12)
-          .tag(SidebarSelection.remoteKage(worktree.selection))
-        }
       }
     }
   }
@@ -195,31 +233,6 @@ private struct RemoteKageHostStatusRow: View {
     }
     .help(indicator.help)
     .moveDisabled(true)
-  }
-}
-
-private struct RemoteKageHostHeaderView: View {
-  let host: RemoteKageSidebarModel.Host
-
-  var body: some View {
-    HStack(spacing: 4) {
-      Image(systemName: "desktopcomputer")
-        .imageScale(.small)
-        .foregroundStyle(.secondary)
-        .accessibilityHidden(true)
-      Text(host.name)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-      Image(systemName: host.indicator.systemImage)
-        .imageScale(.small)
-        .foregroundStyle(host.indicator.tint.color)
-        .accessibilityLabel(host.indicator.label)
-      if host.isAwaitingInput {
-        RemoteKageAwaitingInputMark()
-      }
-    }
-    .appFontInheriting(.subheadline, weight: .semibold)
-    .help(host.indicator.help)
   }
 }
 
