@@ -10,6 +10,9 @@ import SwiftUI
 /// dialog this view raises.
 struct FileViewerTabView: View {
   @Bindable var model: FileViewerModel
+  /// Set when the viewer is a pane rather than a tab (a remote worktree's
+  /// right-hand viewer): the header then carries its own close button.
+  var onClose: (() -> Void)?
 
   /// Gates the real renderer behind one runloop turn so the spinner paints first.
   @State private var isContentMounted = false
@@ -95,6 +98,14 @@ struct FileViewerTabView: View {
       }
       .buttonStyle(.borderless)
       .help("Reload from Disk")
+      if let onClose {
+        Button(action: onClose) {
+          Image(systemName: "xmark")
+            .accessibilityLabel("Close File")
+        }
+        .buttonStyle(.borderless)
+        .help("Close File (Esc)")
+      }
     }
     .imageScale(.medium)
     .padding(.horizontal, 10)
