@@ -45,7 +45,11 @@ struct SidebarListView: View {
     return ScrollViewReader { scrollProxy in
       List(selection: $store.sidebarListSelection) {
         if hasRemoteHosts {
-          SidebarMachineGroupHeader(group: .thisMac, isExpanded: Binding($isThisMacExpanded))
+          SidebarMachineGroupHeader(
+            group: .thisMac,
+            isExpanded: Binding($isThisMacExpanded),
+            summary: SidebarMachineGroup.thisMac.summary(count: structure.reorderableRepositoryIDs.count)
+          )
         }
         ForEach(
           SidebarMachineGroups.visibleLocalSections(

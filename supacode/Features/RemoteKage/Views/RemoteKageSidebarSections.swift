@@ -6,8 +6,8 @@ import SwiftUI
 /// The "Remote Hosts" group header and, under it, one collapsible sidebar
 /// section per remote Kage host, appended after the local sections inside the
 /// sidebar's `List`. Each host's workspaces collapse too; open / closed state
-/// persists (`RemoteKageSidebarExpansion`) and never enters `SidebarStructure`. Reads only `RemoteKageFeature`
-/// state, through the pure `RemoteKageSidebarModel`, so a poll tick never
+/// persists (`RemoteKageSidebarExpansion`) and never enters `SidebarStructure`.
+/// Reads only `RemoteKageFeature` state, through the pure `RemoteKageSidebarModel`, so a poll tick never
 /// invalidates a local row. Worktree rows tag `SidebarSelection.remoteKage`
 /// and share the list's selection with the local rows.
 struct RemoteKageSidebarSections: View {
@@ -21,6 +21,7 @@ struct RemoteKageSidebarSections: View {
       SidebarMachineGroupHeader(
         group: .remoteHosts,
         isExpanded: Binding($isRemoteHostsExpanded),
+        summary: SidebarMachineGroup.remoteHosts.summary(count: model.hosts.count),
         isAwaitingInput: model.isAwaitingInput
       )
       if isRemoteHostsExpanded {
@@ -59,22 +60,26 @@ private struct RemoteKageHostSection: View {
   let groupBinding: (RemoteKageSidebarModel.Group.GroupID) -> Binding<Bool>
 
   var body: some View {
-    Section(isExpanded: $isHostExpanded) {
-      if let groups = host.groups {
-        if groups.isEmpty {
-          Text("No projects on this host")
-            .appFont(.footnote)
-            .foregroundStyle(.secondary)
-            .moveDisabled(true)
+    // The band is an untagged header row rather than the `Section` header:
+    // a sidebar `Section` header cannot carry a filled band, and a row keeps
+    // the whole band clickable and the awaiting mark visible while collapsed.
+    Section {
+      RemoteKageHostHeaderRow(host: host, isExpanded: $isHostExpanded)
+      if isHostExpanded {
+        if let groups = host.groups {
+          if groups.isEmpty {
+            Text("No projects on this host")
+              .appFont(.footnote)
+              .foregroundStyle(.secondary)
+              .moveDisabled(true)
+          }
+          ForEach(groups) { group in
+            RemoteKageGroupRows(hostName: host.name, group: group, isExpanded: groupBinding(group.id))
+          }
+        } else {
+          RemoteKageHostStatusRow(indicator: host.indicator)
         }
-        ForEach(groups) { group in
-          RemoteKageGroupRows(hostName: host.name, group: group, isExpanded: groupBinding(group.id))
-        }
-      } else {
-        RemoteKageHostStatusRow(indicator: host.indicator)
       }
-    } header: {
-      RemoteKageHostHeaderView(host: host)
     }
   }
 }
@@ -98,40 +103,6 @@ private struct RemoteKageGroupRows: View {
         RemoteKageRepositoryRows(hostName: hostName, repository: repository)
       }
     }
-  }
-}
-
-/// A workspace's (or "Other Projects") collapsible heading inside a host.
-private struct RemoteKageWorkspaceHeader: View {
-  let title: String
-  @Binding var isExpanded: Bool
-  let isAwaitingInput: Bool
-
-  var body: some View {
-    Button {
-      withAnimation(.easeInOut(duration: 0.15)) { isExpanded.toggle() }
-    } label: {
-      HStack(spacing: 6) {
-        Text(title)
-          .appFont(.caption, weight: .medium)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-        Spacer(minLength: 4)
-        if isAwaitingInput, !isExpanded {
-          RemoteKageAwaitingInputMark()
-        }
-        SidebarDisclosureChevron(isExpanded: isExpanded)
-      }
-      .padding(.top, 4)
-      .contentShape(.rect)
-    }
-    .buttonStyle(.plain)
-    .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
-    .accessibilityLabel(title)
-    .accessibilityValue(isExpanded ? "expanded" : "collapsed")
-    .accessibilityAddTraits(.isHeader)
-    .selectionDisabled()
-    .moveDisabled(true)
   }
 }
 
@@ -262,31 +233,6 @@ private struct RemoteKageHostStatusRow: View {
     }
     .help(indicator.help)
     .moveDisabled(true)
-  }
-}
-
-private struct RemoteKageHostHeaderView: View {
-  let host: RemoteKageSidebarModel.Host
-
-  var body: some View {
-    HStack(spacing: 4) {
-      Image(systemName: "desktopcomputer")
-        .imageScale(.small)
-        .foregroundStyle(.secondary)
-        .accessibilityHidden(true)
-      Text(host.name)
-        .foregroundStyle(.primary)
-        .lineLimit(1)
-      Image(systemName: host.indicator.systemImage)
-        .imageScale(.small)
-        .foregroundStyle(host.indicator.tint.color)
-        .accessibilityLabel(host.indicator.label)
-      if host.isAwaitingInput {
-        RemoteKageAwaitingInputMark()
-      }
-    }
-    .appFontInheriting(.subheadline, weight: .semibold)
-    .help(host.indicator.help)
   }
 }
 

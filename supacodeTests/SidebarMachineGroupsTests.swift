@@ -71,4 +71,17 @@ struct SidebarMachineGroupsTests {
     #expect(SidebarMachineGroup.remoteHosts.title == "Remote Hosts")
     #expect(SidebarMachineGroup.thisMac.systemImage != SidebarMachineGroup.remoteHosts.systemImage)
   }
+
+  // MARK: - Collapsed summary.
+
+  @Test func thisMacSummaryCountsProjects() {
+    #expect(SidebarMachineGroup.thisMac.summary(count: 0) == "No projects")
+    #expect(SidebarMachineGroup.thisMac.summary(count: 1) == "1 project")
+    #expect(SidebarMachineGroup.thisMac.summary(count: 4) == "4 projects")
+  }
+
+  @Test func remoteHostsSummaryCountsHosts() {
+    #expect(SidebarMachineGroup.remoteHosts.summary(count: 1) == "1 host")
+    #expect(SidebarMachineGroup.remoteHosts.summary(count: 2) == "2 hosts")
+  }
 }

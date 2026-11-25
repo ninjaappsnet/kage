@@ -23,6 +23,21 @@ enum SidebarMachineGroup: String, Equatable, Sendable, CaseIterable {
     }
   }
 
+  /// The short count shown on a collapsed group's band: projects on this Mac,
+  /// hosts under Remote Hosts.
+  func summary(count: Int) -> String {
+    switch self {
+    case .thisMac:
+      switch count {
+      case 0: "No projects"
+      case 1: "1 project"
+      default: "\(count) projects"
+      }
+    case .remoteHosts:
+      count == 1 ? "1 host" : "\(count) hosts"
+    }
+  }
+
   /// The group a sidebar selection lives in, so a selection made while that
   /// group is collapsed (hotkey, notification click, palette) can open it.
   static func containing(_ selection: SidebarSelection?) -> Self? {
