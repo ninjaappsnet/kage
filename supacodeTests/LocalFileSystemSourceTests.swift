@@ -166,8 +166,16 @@ struct LocalFileSystemSourceTests {
 
     // Another process writes: the stream ignores this process's own writes
     // (`kFSEventStreamCreateFlagIgnoreSelf`), so the viewer's saves never echo back.
-    try await Self.touchFromAnotherProcess(directory.appending(path: "new.txt"))
+    // It keeps writing until the event arrives: under full-suite load fseventsd can
+    // drop a change made in the stream's first moments, and one write then waits
+    // out the test's time limit.
+    let writer = Task {
+      for index in 0..<500 where !Task.isCancelled {
+        try? await Self.touchFromAnotherProcess(directory.appending(path: "new-\(index).txt"))
+      }
+    }
     let event = await iterator.next()
+    writer.cancel()
 
     #expect(event == .rescan(directory.standardizedFileURL))
   }
