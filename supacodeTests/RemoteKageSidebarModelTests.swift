@@ -279,4 +279,88 @@ struct RemoteKageSidebarModelTests {
 
     #expect(Set([online, offline, notRunning, update, connecting].map(\.systemImage)).count == 5)
   }
+
+  // MARK: - Awaiting input on collapsible containers.
+
+  private func awaitingTab() -> HostSnapshot.Tab {
+    tab("t-await", agents: [.init(kind: "claude", activity: "awaitingInput")])
+  }
+
+  @Test func groupAwaitsInputWhenAnyWorktreeInItDoes() throws {
+    let snapshot = snapshot(
+      workspaces: [.init(id: "w1", name: "Side"), .init(id: "w2", name: "Work")],
+      repositories: [
+        repository("a", workspaceID: "w1", worktrees: [worktree("a-main", isMain: true)]),
+        repository(
+          "b",
+          workspaceID: "w2",
+          worktrees: [worktree("b-main", isMain: true), worktree("b-x", tabs: [awaitingTab()])]
+        ),
+      ]
+    )
+
+    let groups = RemoteKageSidebarModel.groups(for: snapshot, hostID: hostID)
+
+    try #require(groups.count == 2)
+    #expect(!groups[0].isAwaitingInput)
+    #expect(groups[1].isAwaitingInput)
+  }
+
+  @Test func modelAwaitsInputWhenAnyHostDoes() {
+    let quiet = RemoteKageHost(name: "Quiet", username: "me", address: "q")
+    let loud = RemoteKageHost(id: hostID, name: "Loud", username: "me", address: "l")
+    let loudSnapshot = snapshot(
+      repositories: [repository("a", worktrees: [worktree("a-main", isMain: true, tabs: [awaitingTab()])])]
+    )
+
+    let allQuiet = RemoteKageSidebarModel.make(hosts: [quiet], hostStates: [:])
+    let oneLoud = RemoteKageSidebarModel.make(
+      hosts: [quiet, loud],
+      hostStates: [loud.id: .init(status: .online, lastSnapshot: loudSnapshot, lastUpdated: nil)]
+    )
+
+    #expect(!allQuiet.isAwaitingInput)
+    #expect(oneLoud.isAwaitingInput)
+  }
+
+  // MARK: - Reveal target.
+
+  @Test func revealTargetNamesTheHostAndTheWorkspaceHoldingTheSelection() {
+    let host = RemoteKageHost(id: hostID, name: "Mini", username: "me", address: "m")
+    let last = snapshot(
+      workspaces: [.init(id: "w1", name: "Side")],
+      repositories: [
+        repository("a", workspaceID: "w1", worktrees: [worktree("a-main", isMain: true)]),
+        repository("loose", worktrees: [worktree("loose-main", isMain: true)]),
+      ]
+    )
+    let model = RemoteKageSidebarModel.make(
+      hosts: [host],
+      hostStates: [hostID: .init(status: .online, lastSnapshot: last, lastUpdated: nil)]
+    )
+
+    let inWorkspace = model.revealTarget(for: RemoteKageSelection(hostID: hostID, worktreeID: "a-main"))
+    let inUngrouped = model.revealTarget(for: RemoteKageSelection(hostID: hostID, worktreeID: "loose-main"))
+
+    #expect(inWorkspace == .init(hostID: hostID, groupID: .workspace("w1")))
+    #expect(inUngrouped == .init(hostID: hostID, groupID: .ungrouped))
+  }
+
+  @Test func revealTargetFallsBackToTheHostBeforeItsSnapshotArrives() {
+    let host = RemoteKageHost(id: hostID, name: "Mini", username: "me", address: "m")
+    let model = RemoteKageSidebarModel.make(hosts: [host], hostStates: [:])
+
+    let target = model.revealTarget(for: RemoteKageSelection(hostID: hostID, worktreeID: "a-main"))
+
+    #expect(target == .init(hostID: hostID, groupID: nil))
+  }
+
+  @Test func revealTargetIsNilWithoutASelectionOrForAnUnknownHost() {
+    let host = RemoteKageHost(id: hostID, name: "Mini", username: "me", address: "m")
+    let model = RemoteKageSidebarModel.make(hosts: [host], hostStates: [:])
+    let stranger = RemoteKageSelection(hostID: UUID(), worktreeID: "x")
+
+    #expect(model.revealTarget(for: nil) == nil)
+    #expect(model.revealTarget(for: stranger) == nil)
+  }
 }
