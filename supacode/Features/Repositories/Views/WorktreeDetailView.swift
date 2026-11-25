@@ -430,8 +430,12 @@ struct WorktreeDetailView: View {
     let hasRunningRunScript = state.hasRunningRunScript
     return
       content
-      // Local paths only — a remote worktree has nothing on disk to browse.
-      .focusedSceneAction(\.toggleFileExplorerAction, enabled: canRevealLocally) {
+      // Local paths, or a remote Kage worktree (browsed over `kage host serve`);
+      // a Remote SSH worktree has nothing to browse here.
+      .focusedSceneAction(
+        \.toggleFileExplorerAction,
+        enabled: canRevealLocally || state.repositories.selection?.remoteKageSelection != nil
+      ) {
         toggleFileExplorer()
       }
       // Open is enabled only when the resolved editor can open the selection

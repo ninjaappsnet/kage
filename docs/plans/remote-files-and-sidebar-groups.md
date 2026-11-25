@@ -2,9 +2,16 @@
 
 Status: planned 2026-11-25, in progress on `feat/remote-files`. Merged there on
 2026-11-25: A (`kage host serve`, fb7224ea), C (sidebar groups, 89316f82),
-D (tab working directory, fbb484b1), B (viewer seam, 8f89ded7). E in progress on
-`feat/rf-remote`. Sidebar checked in the dev sandbox (d4ad86f6; Remote Hosts
-band changed to purple so it reads apart from This Mac). Follows
+D (tab working directory, fbb484b1), B (viewer seam, 8f89ded7). E (remote
+explorer + viewer) merged 2026-11-25 (from `feat/rf-remote`) and checked against
+mini-1 in the dev sandbox with a copied CLI (`KAGE_REMOTE_CLI_PATH_OVERRIDE`):
+old-host message, browse, Markdown / JSON / PNG previews, edit + save, live
+refresh, conflict banner, idle 0 CPU / no traffic, close 30 s after the UI
+leaves. Not done from the plan: closing after 5 min of app inactivity and the
+60 s safety re-list (left out: the channel would no longer be idle). Phase 3
+(a release that ships `host serve`) still open. Sidebar checked in the dev
+sandbox (d4ad86f6; Remote Hosts band purple). Workspace picker into the This
+Mac band: `feat/rf-picker`, in progress. Follows
 `docs/plans/remote-kage-hosts.md` (released in 1.3.2).
 
 ## Goal

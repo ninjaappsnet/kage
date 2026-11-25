@@ -35,6 +35,8 @@ struct ContentView: View {
     return NavigationSplitView(columnVisibility: $leftSidebarVisibility) {
       SidebarView(store: repositoriesStore, terminalManager: terminalManager)
         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+        // Debug sandbox driver; inside the environment below so it sees the remote store.
+        .modifier(RemoteKageFilesDebugSelection(repositoriesStore: repositoriesStore))
         .environment(\.remoteKageStore, store.scope(state: \.remoteKage, action: \.remoteKage))
         .safeAreaInset(edge: .bottom, spacing: 0) {
           SidebarBottomCardView(store: store)
