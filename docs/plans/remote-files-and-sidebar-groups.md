@@ -8,8 +8,9 @@ Status: planned 2026-11-25, in progress on `feat/remote-files`. Follows
 1. For a remote Kage host's worktree, show the same docked file explorer
    (⌥⌘E) and the same right-hand file viewer / editor as a local worktree:
    browse, preview (text, markdown, HTML, images, PDF), edit, ⌘S save, the
-   "changed on disk" banner, git status colors, following the focused tab's
-   folder.
+   "changed on disk" banner, following the focused tab's folder. (The docked
+   panel has no git status colors locally either; `gitStatus` is in the
+   protocol for when it gets them, and costs nothing unless requested.)
 2. Sidebar: when at least one remote host is configured, show two
    independent accordion groups, **This Mac** and **Remote Hosts** (each opens
    and closes on its own, state persisted). Inside Remote Hosts each host is a
@@ -66,7 +67,7 @@ Events (host → viewer, no id): `{"event": "<name>", ...}`.
 | `read` | `path, maxBytes` | `{data: <base64>, size, mtime}`; error `tooLarge` with `size` |
 | `write` | `path, data: <base64>, expectedMtime?` | `{mtime}`; error `conflict` with current `mtime` |
 | `watch` | `paths: [dir]` (replaces the set) | `{}` |
-| `gitStatus` | `root` | `{porcelain: <git status --porcelain=v1 -z output>}` or error `notGit` |
+| `gitStatus` | `root` | `{porcelain: <output of git -C root --no-optional-locks status --porcelain=v2 -z --untracked-files=all --ignored=matching --no-renames>}` or error `notGit` (same argv as `GitClient.fileStatus`, so the app's `GitStatusSnapshot.parse(porcelainV2:)` reads it unchanged) |
 
 Error codes: `notFound`, `permission`, `tooLarge`, `conflict`, `notGit`,
 `badRequest`, `io`.
