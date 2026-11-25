@@ -38,6 +38,16 @@ enum SidebarMachineGroup: String, Equatable, Sendable, CaseIterable {
     }
   }
 
+  /// The collapsed band's summary when the band also carries the workspace
+  /// picker: just the number for "This Mac" (the name beside it is the
+  /// workspace, so "projects" would only crowd it out), unchanged for hosts.
+  func compactSummary(count: Int) -> String {
+    switch self {
+    case .thisMac: "\(count)"
+    case .remoteHosts: summary(count: count)
+    }
+  }
+
   /// The group a sidebar selection lives in, so a selection made while that
   /// group is collapsed (hotkey, notification click, palette) can open it.
   static func containing(_ selection: SidebarSelection?) -> Self? {

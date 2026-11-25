@@ -48,8 +48,10 @@ struct SidebarListView: View {
           SidebarMachineGroupHeader(
             group: .thisMac,
             isExpanded: Binding($isThisMacExpanded),
-            summary: SidebarMachineGroup.thisMac.summary(count: structure.reorderableRepositoryIDs.count)
-          )
+            summary: SidebarMachineGroup.thisMac.compactSummary(count: structure.reorderableRepositoryIDs.count)
+          ) {
+            SidebarWorkspaceBandMenu(store: store)
+          }
         }
         ForEach(
           SidebarMachineGroups.visibleLocalSections(
