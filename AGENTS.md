@@ -230,6 +230,11 @@ When reviewing your own diff, classify each touched **upstream** file as additiv
 - Attach: `RemoteKageAttachedSurface` owns a bare `GhosttySurfaceView` on `GhosttyRuntime` running `ssh -tt … zmx attach` inside `SSHReconnectLoop`; it never touches `LayoutFeature` / `ContentRuntime` / `WorktreeTerminalManager`. The remote script checks `zmx list` first so a vanished session is never recreated. Unmounting the view detaches; `onExit` sends `detachTab`. Two viewers on one zmx session: only the client that last typed sets the size (zmx leader), so a session shows at the host's size until the first keystroke here. Accepted for v1.
 - Tests that spawn processes must not block the main actor (`waitUntilExit` spins the run loop and lets the test host's SwiftUI re-enter, crashing in `ClaudeUsageSidebarPanel`'s `TimelineView`); wait through `terminationHandler` or run `nonisolated`.
 
+## Checking the UI without disturbing the running Kage
+
+- Never launch the plain Debug build or quit / restart `/Applications/Kage.app`: the developer (and often this agent session) is running inside it. Use `scripts/dev-sandbox-app.sh` instead: it copies the Debug build to `.build/dev-sandbox/Kage Sandbox.app` under its own bundle id (`net.ninjaapps.kage.devsandbox`, so its own UserDefaults) and launches it with its own `HOME`, `XDG_CONFIG_HOME` and `ZMX_DIR` (its own config and zmx sessions), seeded with the remote hosts and repository list only. `launch`, `snapshot <tag>`, `defaults <key> <value>` (live, e.g. `sidebarThisMacExpanded false`), `quit`, `reset`.
+- Screenshots: agent shells have no Screen Recording permission (macOS attributes the request to the `claude` binary, which changes every update), so do not run `screencapture`. `snapshot` makes the sandbox app draw its own windows (`DebugWindowSnapshot`, Debug builds only, `KAGE_DEBUG_SNAPSHOT_DIR`) into `.build/dev-sandbox/shots/`. Sidebar outline views are also written on their own (`*-outline-N.png`, transparent background, only rows on screen). Vibrant text and materials render without vibrancy and Metal terminal surfaces render blank, so judge layout and tints, not exact text colors.
+
 ## Fork operations (releases, CI, signing)
 
 This fork's release cadence, self-hosted runner constraints, signing and

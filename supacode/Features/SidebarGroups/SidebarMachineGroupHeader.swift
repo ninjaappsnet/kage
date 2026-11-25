@@ -6,7 +6,7 @@ extension SidebarMachineGroup {
   var tint: Color {
     switch self {
     case .thisMac: .accentColor
-    case .remoteHosts: .indigo
+    case .remoteHosts: .purple
     }
   }
 }
@@ -52,7 +52,7 @@ struct SidebarMachineGroupHeader: View {
       }
       .padding(.horizontal, 10)
       .padding(.vertical, 7)
-      .background(group.tint.opacity(0.12), in: .rect(cornerRadius: 8))
+      .background(group.tint.opacity(0.2), in: .rect(cornerRadius: 8))
       .contentShape(.rect(cornerRadius: 8))
     }
     .buttonStyle(.plain)
