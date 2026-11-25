@@ -10,6 +10,10 @@ import SwiftUI
 /// Width persists across launches; the panel owns its `FileExplorerModel`, so the
 /// parent gives it `.id(worktree.id)` to rebuild the tree when the selection
 /// changes, while `rootURL` changes within a worktree re-root in place.
+///
+/// Files come from `source` (this Mac's disk unless the caller passes another,
+/// e.g. a remote Kage host), so the panel never assumes `rootURL` is reachable
+/// here.
 struct FileExplorerPanel: View {
   private let rootURL: URL
   /// What the viewer currently has open; `nil` once it closes. The highlighted row
@@ -26,6 +30,7 @@ struct FileExplorerPanel: View {
 
   init(
     rootURL: URL,
+    source: any FileSystemSource = LocalFileSystemSource(),
     openFileURL: URL? = nil,
     onOpenFile: ((URL) -> Void)? = nil,
     onClose: @escaping () -> Void
@@ -33,7 +38,7 @@ struct FileExplorerPanel: View {
     self.rootURL = rootURL
     self.openFileURL = openFileURL
     self.onClose = onClose
-    let model = FileExplorerModel(rootURL: rootURL)
+    let model = FileExplorerModel(rootURL: rootURL, source: source)
     model.onOpenFile = onOpenFile
     _model = State(initialValue: model)
   }
@@ -53,12 +58,21 @@ struct FileExplorerPanel: View {
     .onChange(of: rootURL) { _, newRoot in
       model.updateRoot(newRoot)
     }
+    // Lists the root and follows changes; restarts on a re-root and stops (with
+    // the watch) when the panel goes away.
+    .task(id: model.rootURL) {
+      await model.run()
+    }
   }
 
   private var panelBody: some View {
     VStack(spacing: 0) {
       header
       Divider()
+      if let message = model.connectionErrorMessage {
+        connectionBanner(message)
+        Divider()
+      }
       tree
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -77,7 +91,7 @@ struct FileExplorerPanel: View {
         .truncationMode(.middle)
       Spacer(minLength: 4)
       Button {
-        model.showsHiddenFiles.toggle()
+        Task { await model.setShowsHiddenFiles(!model.showsHiddenFiles) }
       } label: {
         Image(systemName: model.showsHiddenFiles ? "eye" : "eye.slash")
           .accessibilityLabel(model.showsHiddenFiles ? "Hide Hidden Files" : "Show Hidden Files")
@@ -85,7 +99,7 @@ struct FileExplorerPanel: View {
       .buttonStyle(.borderless)
       .help(model.showsHiddenFiles ? "Hide Hidden Files" : "Show Hidden Files")
       Button {
-        model.reload()
+        Task { await model.reload() }
       } label: {
         Image(systemName: "arrow.clockwise")
           .accessibilityLabel("Refresh File Explorer")
@@ -111,7 +125,10 @@ struct FileExplorerPanel: View {
 
   @ViewBuilder
   private var tree: some View {
-    if model.rows.isEmpty {
+    if !model.hasLoaded, model.connectionErrorMessage == nil {
+      // The first listing is in flight; an "Empty Folder" here would be a lie.
+      Color.clear
+    } else if model.rows.isEmpty, model.connectionErrorMessage == nil {
       ContentUnavailableView("Empty Folder", systemImage: "folder")
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     } else {
@@ -128,6 +145,23 @@ struct FileExplorerPanel: View {
         .padding(.vertical, 4)
       }
     }
+  }
+
+  /// The link to the files is down. The tree below keeps its last listing, so
+  /// this says why it stopped updating rather than replacing it.
+  private func connectionBanner(_ message: String) -> some View {
+    HStack(spacing: 6) {
+      Image(systemName: "exclamationmark.triangle.fill")
+        .foregroundStyle(.orange)
+        .accessibilityHidden(true)
+      Text(message)
+        .font(.callout)
+        .lineLimit(2)
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 6)
+    .background(.orange.opacity(0.12))
   }
 
   private var resizeHandle: some View {
@@ -201,14 +235,17 @@ private struct FileExplorerRowView: View {
     // dead time before the preview even started opening. Opening a file in its
     // default app lives in the context menu ("Open") instead.
     .onTapGesture {
-      model.activate(node)
+      Task { await model.activate(node) }
     }
     .contextMenu {
-      if !node.isDirectory {
-        Button("Open") { model.openWithDefaultApp(node) }
+      // Finder and the default apps only reach files on this Mac.
+      if model.isLocal {
+        if !node.isDirectory {
+          Button("Open") { model.openWithDefaultApp(node) }
+        }
+        Button("Reveal in Finder") { model.revealInFinder(node) }
+        Divider()
       }
-      Button("Reveal in Finder") { model.revealInFinder(node) }
-      Divider()
       Button("Copy Path") { model.copyAbsolutePath(node) }
       Button("Copy Relative Path") { model.copyRelativePath(node) }
     }
