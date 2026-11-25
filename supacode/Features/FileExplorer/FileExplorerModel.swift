@@ -281,7 +281,7 @@ final class FileExplorerModel {
     guard let selectedURL else { return }
     do {
       _ = try await source.stat(selectedURL)
-    } catch where error.code == .notFound {
+    } catch let error where error.code == .notFound {
       guard generation == self.generation, self.selectedURL == selectedURL else { return }
       self.selectedURL = nil
     } catch {}
