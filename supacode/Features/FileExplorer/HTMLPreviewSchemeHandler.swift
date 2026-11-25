@@ -76,6 +76,19 @@ final class HTMLPreviewSchemeHandler: NSObject, WKURLSchemeHandler {
 
     let taskID = ObjectIdentifier(task)
     inFlight.insert(taskID)
+    // This Mac's disk answers now, as the preview did before the source seam: an
+    // async read waits for a free thread in the shared pool, and a busy pool
+    // stalls the page.
+    if let immediate = source as? any ImmediateFileSystemReading {
+      let outcome: Result<FileSystemReadResult, FileSystemSourceError>
+      do throws(FileSystemSourceError) {
+        outcome = .success(try immediate.readImmediately(fileURL, maxBytes: Self.maxResponseBytes))
+      } catch {
+        outcome = .failure(error)
+      }
+      finish(task, id: taskID, url: url, fileURL: fileURL, outcome: outcome)
+      return
+    }
     let source = source
     Task { [weak self] in
       let outcome: Result<FileSystemReadResult, FileSystemSourceError>

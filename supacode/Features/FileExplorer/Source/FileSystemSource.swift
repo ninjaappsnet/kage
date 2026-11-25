@@ -56,6 +56,13 @@ nonisolated protocol FileSystemSource: Sendable {
   func gitStatus(root: URL) async throws(FileSystemSourceError) -> GitStatusSnapshot
 }
 
+/// A source that can also read without suspending: this Mac's disk. The HTML
+/// preview answers WebKit from it before `start` returns, so a page never waits
+/// on the shared thread pool.
+nonisolated protocol ImmediateFileSystemReading: FileSystemSource {
+  func readImmediately(_ url: URL, maxBytes: Int) throws(FileSystemSourceError) -> FileSystemReadResult
+}
+
 /// A source that can also write without suspending. Only this Mac's disk can
 /// promise it, and it is what keeps the close confirmation's "Save" synchronous
 /// (`TabContent.saveUnsavedWork()` must answer before the close proceeds).

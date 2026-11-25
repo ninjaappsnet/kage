@@ -6,7 +6,7 @@ import SupacodeSettingsShared
 /// `FileSystemEventWatcher` (FSEvents) for changes and `GitClient` for status.
 /// The work runs off the main actor (`@concurrent`); the results are exactly what
 /// the explorer and viewer computed when they touched the disk themselves.
-nonisolated struct LocalFileSystemSource: ImmediateFileSystemWriting {
+nonisolated struct LocalFileSystemSource: ImmediateFileSystemWriting, ImmediateFileSystemReading {
   let id = FileSystemSourceID.local
   var isLocal: Bool { true }
 
@@ -30,6 +30,10 @@ nonisolated struct LocalFileSystemSource: ImmediateFileSystemWriting {
 
   @concurrent
   func read(_ url: URL, maxBytes: Int) async throws(FileSystemSourceError) -> FileSystemReadResult {
+    try readImmediately(url, maxBytes: maxBytes)
+  }
+
+  func readImmediately(_ url: URL, maxBytes: Int) throws(FileSystemSourceError) -> FileSystemReadResult {
     // Stat first, as the viewer always did: the size cap is enforced without
     // reading the file, and the modification date predates the bytes.
     let info = try Self.statNow(url)

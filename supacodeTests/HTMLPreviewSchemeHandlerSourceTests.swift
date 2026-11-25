@@ -123,6 +123,29 @@ struct HTMLPreviewSchemeHandlerSourceTests {
     #expect(!task.finished)
   }
 
+  /// A page on this Mac is answered before `start` returns, as it was before the
+  /// source seam: an async read waits for a free thread in the shared pool, and a
+  /// busy pool (CI's test run) stalled whole pages past their time limit.
+  @Test func aLocalPageIsAnsweredBeforeStartReturns() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appending(path: "preview-\(UUID().uuidString)", directoryHint: .isDirectory)
+      .resolvingSymlinksInPath()
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try Data("<p>x</p>".utf8).write(to: directory.appending(path: "page.html"))
+    let handler = HTMLPreviewSchemeHandler(
+      rootDirectory: directory,
+      entryFileName: "page.html",
+      source: LocalFileSystemSource()
+    )
+    let task = FakeSchemeTask(path: "/")
+
+    handler.webView(WKWebView(), start: task)
+
+    #expect(task.finished)
+    #expect(String(bytes: task.body, encoding: .utf8) == "<p>x</p>")
+  }
+
   @Test func aStoppedTaskIsNeverAnswered() async {
     let source = Self.makeSource()
     source.holdReads()
