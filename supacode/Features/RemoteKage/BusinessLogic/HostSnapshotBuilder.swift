@@ -20,6 +20,8 @@ nonisolated enum HostSnapshotBuilder {
     var isTerminal: Bool
     /// False for blocking-script runners, which launch outside zmx.
     var usesZmx: Bool
+    /// The surface's current working directory, nil when unknown.
+    var workingDirectory: String?
   }
 
   /// One tracked agent on a surface (`AgentPresenceFeature` record).
@@ -71,7 +73,8 @@ nonisolated enum HostSnapshotBuilder {
                 zmxSession: zmxAvailable && tab.usesZmx ? ZmxSessionID.make(surfaceID: tab.surfaceID) : nil,
                 agents: (agentsBySurface[tab.surfaceID] ?? [])
                   .sorted { ($0.kind, $0.activity) < ($1.kind, $1.activity) }
-                  .map { HostSnapshot.Agent(kind: $0.kind, activity: $0.activity) }
+                  .map { HostSnapshot.Agent(kind: $0.kind, activity: $0.activity) },
+                workingDirectory: tab.workingDirectory
               )
             }
           )

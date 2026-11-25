@@ -135,6 +135,16 @@ enum RemoteKageWorktreeDetail {
     return (tabs.first(where: \.isFocused) ?? tabs.first)?.id
   }
 
+  /// The directory a file explorer for this worktree roots at: the selected
+  /// tab's working directory, else the worktree path.
+  static func explorerRoot(tabs: [HostSnapshot.Tab], selectedTabID: String?, worktreePath: String) -> String {
+    guard let selectedTabID,
+      let directory = tabs.first(where: { $0.id == selectedTabID })?.workingDirectory,
+      !directory.isEmpty
+    else { return worktreePath }
+    return directory
+  }
+
   /// Every attached tab of this worktree that can stay mounted, in strip
   /// order. All of them stay mounted (hidden when not shown) so switching
   /// tabs never drops an SSH session; unmounting one detaches it.

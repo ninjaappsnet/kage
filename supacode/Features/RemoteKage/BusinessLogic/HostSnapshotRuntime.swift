@@ -48,7 +48,8 @@ enum HostSnapshotRuntime {
           isFocused: tab.id == focusedTabID,
           surfaceID: tab.content.id.rawValue,
           isTerminal: tab.content.kind == .terminal,
-          usesZmx: !tab.content.state.isEphemeral
+          usesZmx: !tab.content.state.isEphemeral,
+          workingDirectory: (runtime.content(for: tab.content.id) as? TerminalContent)?.reportedWorkingDirectory
         )
       }
     }

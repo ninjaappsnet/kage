@@ -79,9 +79,45 @@ struct HostSnapshotBuilderTests {
     focused: Bool = false,
     surface: UUID = UUID(),
     terminal: Bool = true,
-    usesZmx: Bool = true
+    usesZmx: Bool = true,
+    workingDirectory: String? = nil
   ) -> HostSnapshotBuilder.TabInput {
-    .init(id: id, title: title, isFocused: focused, surfaceID: surface, isTerminal: terminal, usesZmx: usesZmx)
+    .init(
+      id: id, title: title, isFocused: focused, surfaceID: surface, isTerminal: terminal, usesZmx: usesZmx,
+      workingDirectory: workingDirectory)
+  }
+
+  // MARK: - Working directory
+
+  @Test func tabWorkingDirectoryIsCopiedFromTheInput() throws {
+    let repo = makeRepository("/tmp/a")
+    let snapshot = build(
+      repositories: [repo],
+      tabs: [repo.worktrees[0].id: [tab(workingDirectory: "/tmp/a/Sources"), tab()]]
+    )
+    let tabs = try firstTabs(snapshot)
+    #expect(tabs.map(\.workingDirectory) == ["/tmp/a/Sources", nil])
+  }
+
+  @Test func workingDirectoryRoundTripsThroughJSON() throws {
+    let repo = makeRepository("/tmp/a")
+    let snapshot = build(
+      repositories: [repo], tabs: [repo.worktrees[0].id: [tab(workingDirectory: "/tmp/a/x")]])
+    let json = try HostSnapshotBuilder.encodeJSON(snapshot)
+    let decoded = try JSONDecoder().decode(HostSnapshot.self, from: Data(json.utf8))
+    #expect(decoded == snapshot)
+    #expect(try firstTabs(decoded).first?.workingDirectory == "/tmp/a/x")
+  }
+
+  @Test func snapshotWithoutWorkingDirectoryStillDecodes() throws {
+    let json = """
+      {"schemaVersion":1,"kageVersion":"1.3.2","machineName":"M","workspaces":[],"repositories":[
+      {"id":"/r","name":"r","rootPath":"/r","isGitRepository":true,"worktrees":[
+      {"id":"/r","name":"main","path":"/r","isMain":true,"isPinned":false,"tabs":[
+      {"id":"t","title":"zsh","isFocused":true,"surfaceID":"s","agents":[]}]}]}]}
+      """
+    let decoded = try JSONDecoder().decode(HostSnapshot.self, from: Data(json.utf8))
+    #expect(try firstTabs(decoded).first?.workingDirectory == nil)
   }
 
   // MARK: - Header

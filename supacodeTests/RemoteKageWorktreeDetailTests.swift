@@ -39,6 +39,28 @@ struct RemoteKageWorktreeDetailTests {
     )
   }
 
+  // MARK: - File explorer root.
+
+  private func tab(_ id: String, cwd: String?, isFocused: Bool = false) -> HostSnapshot.Tab {
+    HostSnapshot.Tab(
+      id: id, title: id, isFocused: isFocused, surfaceID: id, zmxSession: nil, agents: [], workingDirectory: cwd)
+  }
+
+  @Test func explorerRootIsTheSelectedTabsWorkingDirectory() {
+    let tabs = [tab("t1", cwd: "/r/app/a", isFocused: true), tab("t2", cwd: "/r/app/b")]
+    #expect(
+      RemoteKageWorktreeDetail.explorerRoot(tabs: tabs, selectedTabID: "t2", worktreePath: "/r/app") == "/r/app/b")
+  }
+
+  @Test func explorerRootFallsBackToTheWorktreePath() {
+    let tabs = [tab("t1", cwd: nil), tab("t2", cwd: "")]
+    #expect(RemoteKageWorktreeDetail.explorerRoot(tabs: tabs, selectedTabID: "t1", worktreePath: "/r/app") == "/r/app")
+    #expect(RemoteKageWorktreeDetail.explorerRoot(tabs: tabs, selectedTabID: "t2", worktreePath: "/r/app") == "/r/app")
+    #expect(RemoteKageWorktreeDetail.explorerRoot(tabs: tabs, selectedTabID: nil, worktreePath: "/r/app") == "/r/app")
+    #expect(
+      RemoteKageWorktreeDetail.explorerRoot(tabs: tabs, selectedTabID: "gone", worktreePath: "/r/app") == "/r/app")
+  }
+
   // MARK: - Quick answers.
 
   @Test func quickAnswersMapToTheKeysTheyType() {
