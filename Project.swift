@@ -31,6 +31,7 @@ let appBuildableFolders: [BuildableFolder] = [
   "supacode/Features",
   "supacode/Infrastructure",
   "supacode/Support",
+  "supacode/RemoteFileProtocol",
 ]
 
 let appDependencies: [TargetDependency] = [
@@ -193,6 +194,7 @@ let project = Project(
       infoPlist: .default,
       buildableFolders: [
         "supacode-cli",
+        "supacode/RemoteFileProtocol",
       ],
       dependencies: [
         .external(name: "ArgumentParser"),
