@@ -13,8 +13,12 @@
 #   scripts/dev-sandbox-app.sh launch      # start it (prepares if needed)
 #   scripts/dev-sandbox-app.sh snapshot T  # save its windows to .build/dev-sandbox/shots/T-<n>.png
 #   scripts/dev-sandbox-app.sh defaults K V # write a bool/string default (e.g. collapse a group)
+#   scripts/dev-sandbox-app.sh remote CMD  # drive the remote files UI (RemoteKageFilesDebugCommands)
 #   scripts/dev-sandbox-app.sh quit        # quit it and end its zmx sessions
 #   scripts/dev-sandbox-app.sh reset       # quit and delete the sandbox
+#
+# Extra environment for launch: KAGE_SANDBOX_ENV="KEY=value KEY2=value2", e.g.
+# KAGE_REMOTE_CLI_PATH_OVERRIDE=/Users/me/kage-dev/supacode (Debug builds only).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -61,7 +65,9 @@ case "${1:-}" in
     [ -d "$APP" ] || prepare
     seed
     if [ -n "$(pid)" ]; then echo "already running (pid $(pid))"; exit 0; fi
-    open -n -g "$APP" \
+    extra_env=()
+    for pair in ${KAGE_SANDBOX_ENV:-}; do extra_env+=(--env "$pair"); done
+    open -n -g "$APP" ${extra_env[@]+"${extra_env[@]}"} \
       --env HOME="$SANDBOX_HOME" \
       --env XDG_CONFIG_HOME="$SANDBOX_HOME/.config" \
       --env ZMX_DIR="$ZMX_SANDBOX_DIR" \
@@ -77,6 +83,16 @@ case "${1:-}" in
     for _ in $(seq 1 40); do [ -f "$SHOTS/$tag.done" ] && break; sleep 0.25; done
     [ -f "$SHOTS/$tag.done" ] || { echo "no snapshot (is the sandbox app running?)" >&2; exit 1; }
     cat "$SHOTS/$tag.done"; echo
+    ;;
+  remote)
+    command="${2:?usage: remote <command>}"
+    osascript -l JavaScript - "$command" >/dev/null <<'JXA'
+ObjC.import('Foundation');
+function run(argv) {
+  $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately(
+    'net.ninjaapps.kage.debug.remote-files', argv[0], $(), true);
+}
+JXA
     ;;
   defaults)
     key="$2"; value="$3"
