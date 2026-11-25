@@ -1,6 +1,6 @@
 # Remote files and sidebar machine groups
 
-Status: planned 2026-11-25, built on `feat/remote-files`, shipping in 1.4.0. Merged there on
+Status: planned 2026-11-25, built on `feat/remote-files`, released in 1.4.1 on 2026-11-25 (tag v1.4.0 is orphaned: its CI test gate failed on pool-starved async tests; 1.4.1 adds the local HTML preview fix 081888b4). Merged there on
 2026-11-25: A (`kage host serve`, fb7224ea), C (sidebar groups, 89316f82),
 D (tab working directory, fbb484b1), B (viewer seam, 8f89ded7). E (remote
 explorer + viewer) merged 2026-11-25 (from `feat/rf-remote`) and checked against
