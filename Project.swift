@@ -319,6 +319,9 @@ let project = Project(
         ],
         debug: [
           "CODE_SIGN_ENTITLEMENTS": "supacode/supacodeDebug.entitlements",
+          // Own identity for Debug builds: an ad-hoc build under the release id
+          // takes over the installed Kage's privacy grants (DebugBundleIdentifierTests).
+          "PRODUCT_BUNDLE_IDENTIFIER": "net.ninjaapps.kage.debug",
         ],
         release: [
           "CODE_SIGN_ENTITLEMENTS": "supacode/supacode.entitlements",
