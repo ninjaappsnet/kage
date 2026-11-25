@@ -3,22 +3,25 @@ import PDFKit
 import SwiftUI
 
 /// Previews non-text media (images, PDFs) in the file viewer pane. Renders from
-/// the file URL — nothing is loaded into the editor buffer.
+/// the bytes the viewer read through its source (the file may live on another
+/// machine) — nothing is loaded into the editor buffer.
 struct MediaPreview: View {
-  let url: URL
+  let data: Data
   let kind: FileViewerFileType.MediaKind
+  /// `nil` when the file is not on this Mac.
+  let onOpenInDefaultApp: (() -> Void)?
 
   var body: some View {
     switch kind {
     case .image:
-      if let image = NSImage(contentsOf: url) {
+      if let image = NSImage(data: data) {
         ImagePreview(image: image)
           .padding(8)
       } else {
         unsupported
       }
     case .pdf:
-      if let document = PDFDocument(url: url) {
+      if let document = PDFDocument(data: data) {
         PDFPreview(document: document)
       } else {
         unsupported
@@ -29,7 +32,9 @@ struct MediaPreview: View {
   private var unsupported: some View {
     VStack(spacing: 12) {
       ContentUnavailableView("Can't preview this file", systemImage: "doc.questionmark")
-      Button("Open in Default App") { NSWorkspace.shared.open(url) }
+      if let onOpenInDefaultApp {
+        Button("Open in Default App", action: onOpenInDefaultApp)
+      }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }

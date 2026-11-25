@@ -3,11 +3,13 @@ import SupacodeSettingsShared
 
 private nonisolated let fileViewerLogger = SupaLogger("FileViewer")
 
-/// Backs the file viewer/editor pane. Loads a text file off disk into an
-/// editable buffer, tracks dirty state against the last saved contents, renders
-/// markdown vs source code, and saves explicitly (⌘S) via the symlink-preserving
-/// writer. Non-TCA shared store (`@Observable`, per the terminal-layer
-/// convention): the open document is ephemeral, view-local UI state.
+/// Backs the file viewer/editor pane. Loads a text file into an editable buffer,
+/// tracks dirty state against the last saved contents, renders markdown vs
+/// source code, and saves explicitly (⌘S). Every read and write goes through a
+/// `FileSystemSource` (this Mac's disk by default, a remote Kage host later), so
+/// `fileURL` is a path carrier only and the model never touches the disk itself.
+/// Non-TCA shared store (`@Observable`, per the terminal-layer convention): the
+/// open document is ephemeral, view-local UI state.
 @MainActor
 @Observable
 final class FileViewerModel {
@@ -16,6 +18,8 @@ final class FileViewerModel {
 
   enum LoadState: Equatable {
     case empty
+    /// A read is in flight; the pane keeps its spinner up.
+    case loading
     case loaded
     case media(FileViewerFileType.MediaKind)
     case binary
@@ -29,6 +33,14 @@ final class FileViewerModel {
   private(set) var isMarkdown = false
   private(set) var isHTML = false
   private(set) var language: String?
+
+  /// The bytes of an image or PDF, read through the source so the preview never
+  /// opens the path itself (it may live on another machine).
+  private(set) var mediaData: Data?
+
+  /// Where the open file lives. The HTML preview serves the page's assets
+  /// through it too.
+  @ObservationIgnored let source: any FileSystemSource
 
   /// Whether the open HTML document may reach the network. Off for every newly
   /// opened file: the preview runs the page's JavaScript, and these files are
@@ -57,6 +69,13 @@ final class FileViewerModel {
 
   private var fileByteCount = 0
 
+  /// Bumped by every load and by `close()`, so a read that lands after a newer
+  /// open (or after the pane closed) is dropped instead of applied.
+  @ObservationIgnored private var loadGeneration = 0
+
+  /// The last save started; the next one waits for it (`enqueueWrite`).
+  @ObservationIgnored private var pendingWrite: Task<Void, Never>?
+
   /// True from the moment a file is opened until the pane reports that the real
   /// content has been mounted. Reading the file is fast, but rendering it is not
   /// — a long markdown document blocks the main thread for seconds, and nothing
@@ -77,16 +96,23 @@ final class FileViewerModel {
     loadState == .loaded && fileByteCount <= FileViewerFileType.maxHighlightBytes
   }
 
+  /// Whether Finder and the default apps can open `fileURL`.
+  var isLocal: Bool { source.isLocal }
+
   nonisolated deinit {}
+
+  init(source: any FileSystemSource = LocalFileSystemSource()) {
+    self.source = source
+  }
 
   /// Load `url` into the editor, classifying it as markdown / code / binary and
   /// guarding against oversized files.
-  func open(_ url: URL) {
+  func open(_ url: URL) async {
     // Re-opening the file already on screen would re-read it from disk; with
     // unsaved edits in the buffer that silently discards them. Reload from Disk
     // remains the explicit way to throw the buffer away.
     guard fileURL?.standardizedFileURL != url.standardizedFileURL || !isDirty else { return }
-    load(url)
+    await load(url)
   }
 
   /// Marks the pane's real content as mounted, clearing the spinner the pane
@@ -95,8 +121,10 @@ final class FileViewerModel {
     isPreparingContent = false
   }
 
-  private func load(_ url: URL) {
+  private func load(_ url: URL) async {
     isPreparingContent = true
+    loadGeneration += 1
+    let generation = loadGeneration
     let standardized = url.standardizedFileURL
     fileURL = standardized
     displayName = standardized.lastPathComponent
@@ -104,69 +132,98 @@ final class FileViewerModel {
     saveErrorMessage = nil
     mode = .rendered
     isHTMLTrusted = false
+    // The previous buffer goes now, not when the read lands: until then it is
+    // neither editable nor dirty, so nothing can save it over the new path.
+    reset(to: .loading)
+    diskModificationDate = nil
 
+    // Media (images / PDF) is previewed from its bytes, not loaded as text, so it
+    // gets the larger cap. The source refuses an oversized file without reading it.
+    let mediaKind = FileViewerFileType.mediaKind(for: standardized)
+    let cap = mediaKind == nil ? FileViewerFileType.maxEditableBytes : FileViewerFileType.maxMediaBytes
+    let result: FileSystemReadResult
     do {
-      // FileManager (not URL.resourceValues) for the mtime: URL caches resource
-      // values on the instance, which would mask later external changes since we
-      // re-read the same stored URL when checking for conflicts on save.
-      let attributes = try FileManager.default.attributesOfItem(atPath: standardized.path(percentEncoded: false))
-      diskModificationDate = attributes[.modificationDate] as? Date
-      let size = (attributes[.size] as? Int) ?? 0
-      // Media (images / PDF) is previewed from the URL, not loaded as text.
-      if let kind = FileViewerFileType.mediaKind(for: standardized) {
-        reset(to: size > FileViewerFileType.maxMediaBytes ? .tooLarge(size) : .media(kind))
-        return
-      }
-      if size > FileViewerFileType.maxEditableBytes {
-        reset(to: .tooLarge(size))
-        return
-      }
-      let data = try Data(contentsOf: standardized)
-      guard !FileViewerFileType.isProbablyBinary(data), let string = String(data: data, encoding: .utf8) else {
-        reset(to: .binary)
-        return
-      }
-      fileByteCount = data.count
-      savedText = string
-      text = string
-      isMarkdown = FileViewerFileType.isMarkdown(url: standardized, sample: string)
-      // Classified only once the bytes are known to be text, so a file that
-      // merely ends in `.html` but holds binary never reaches the web view.
-      isHTML = HTMLPreviewPolicy.isPreviewable(url: standardized)
-      language = isMarkdown ? "markdown" : FileViewerFileType.highlightrLanguage(for: standardized)
-      mode = isMarkdown || isHTML ? .rendered : .raw
-      loadState = .loaded
+      result = try await source.read(standardized, maxBytes: cap)
     } catch {
-      fileViewerLogger.error("Failed to open \(standardized.path): \(error.localizedDescription)")
-      reset(to: .unreadable(error.localizedDescription))
-    }
-  }
-
-  /// Save the buffer to disk. Refuses (surfacing `externalChangePending`) when
-  /// the file changed externally since it was opened; the user then chooses
-  /// Reload or Overwrite.
-  func save() {
-    guard loadState == .loaded, let url = fileURL else { return }
-    if diskChangedExternally(url) {
-      externalChangePending = true
+      guard generation == loadGeneration else { return }
+      if error.code == .tooLarge {
+        diskModificationDate = error.modificationDate
+        reset(to: .tooLarge(error.size ?? 0))
+      } else {
+        fileViewerLogger.error("Failed to open \(standardized.path): \(error.localizedDescription)")
+        reset(to: .unreadable(error.localizedDescription))
+      }
       return
     }
-    write(to: url)
+    guard generation == loadGeneration else { return }
+    diskModificationDate = result.modificationDate
+    if let mediaKind {
+      mediaData = result.data
+      loadState = .media(mediaKind)
+      return
+    }
+    let data = result.data
+    guard !FileViewerFileType.isProbablyBinary(data), let string = String(data: data, encoding: .utf8) else {
+      reset(to: .binary)
+      return
+    }
+    fileByteCount = data.count
+    savedText = string
+    text = string
+    isMarkdown = FileViewerFileType.isMarkdown(url: standardized, sample: string)
+    // Classified only once the bytes are known to be text, so a file that
+    // merely ends in `.html` but holds binary never reaches the web view.
+    isHTML = HTMLPreviewPolicy.isPreviewable(url: standardized)
+    language = isMarkdown ? "markdown" : FileViewerFileType.highlightrLanguage(for: standardized)
+    mode = isMarkdown || isHTML ? .rendered : .raw
+    loadState = .loaded
+  }
+
+  /// Save the buffer. Refuses (surfacing `externalChangePending`) when the file
+  /// changed externally since it was opened; the user then chooses Reload or
+  /// Overwrite.
+  func save() async {
+    await enqueueWrite(overwrite: false)
   }
 
   /// Save unconditionally, overwriting any external change. Invoked from the
   /// conflict banner's "Overwrite" action.
-  func overwriteSave() {
-    guard loadState == .loaded, let url = fileURL else { return }
-    write(to: url)
+  func overwriteSave() async {
+    await enqueueWrite(overwrite: true)
   }
 
-  /// Discard the buffer and re-read the current file from disk. Goes straight to
-  /// `load`, bypassing `open`'s guard against clobbering unsaved edits — that is
+  /// The close confirmation's "Save": answers synchronously whether the buffer
+  /// is now safe to drop. This Mac's disk writes on the spot (same conflict
+  /// check as `save()`). A source that must suspend to write cannot answer in
+  /// time, so the save starts in the background and this reports `false`: the
+  /// tab stays open with its buffer rather than closing on a write that has not
+  /// landed.
+  func saveBeforeClose() -> Bool {
+    guard loadState == .loaded, let url = fileURL else { return !isDirty }
+    guard let immediate = source as? any ImmediateFileSystemWriting else {
+      Task { await save() }
+      return false
+    }
+    let written = text
+    do {
+      let modified = try immediate.writeImmediately(
+        Data(written.utf8),
+        to: url,
+        expectedModificationDate: diskModificationDate
+      )
+      didSave(written, modificationDate: modified)
+    } catch {
+      didFailToSave(error, url: url)
+    }
+    return !isDirty
+  }
+
+  /// Discard the buffer and re-read the current file. Goes straight to `load`,
+  /// bypassing `open`'s guard against clobbering unsaved edits — that is
   /// exactly what this action is for.
-  func reloadFromDisk() {
+  func reloadFromDisk() async {
     guard let url = fileURL else { return }
-    load(url)
+    await load(url)
   }
 
   /// Let the open HTML document reach the network. Scoped to this document —
@@ -177,6 +234,7 @@ final class FileViewerModel {
   }
 
   func close() {
+    loadGeneration += 1
     isPreparingContent = false
     fileURL = nil
     displayName = ""
@@ -191,35 +249,61 @@ final class FileViewerModel {
     externalChangePending = false
     saveErrorMessage = nil
     fileByteCount = 0
+    mediaData = nil
     loadState = .empty
   }
 
-  private func write(to url: URL) {
+  /// Runs writes one at a time. A save issued while another is in flight waits
+  /// for it, so it compares against the modification date that write produced
+  /// rather than the one it replaced — otherwise a quick second ⌘S would read the
+  /// user's own first save as an external change.
+  private func enqueueWrite(overwrite: Bool) async {
+    let previous = pendingWrite
+    let next = Task { [weak self] in
+      await previous?.value
+      guard let self, loadState == .loaded, let url = fileURL else { return }
+      await write(to: url, expectedModificationDate: overwrite ? nil : diskModificationDate)
+    }
+    pendingWrite = next
+    await next.value
+  }
+
+  /// Writes exactly the text captured here: the user may keep typing while a
+  /// write is in flight, and those keystrokes must stay dirty.
+  private func write(to url: URL, expectedModificationDate: Date?) async {
+    let written = text
+    let generation = loadGeneration
     do {
-      try SymlinkPreservingFileWriter.write(Data(text.utf8), to: url)
-      savedText = text
-      externalChangePending = false
-      saveErrorMessage = nil
-      diskModificationDate = Self.modificationDate(of: url) ?? diskModificationDate
+      let modified = try await source.write(
+        Data(written.utf8),
+        to: url,
+        expectedModificationDate: expectedModificationDate
+      )
+      guard generation == loadGeneration else { return }
+      didSave(written, modificationDate: modified)
     } catch {
-      saveErrorMessage = error.localizedDescription
-      fileViewerLogger.error("Failed to save \(url.path): \(error.localizedDescription)")
+      guard generation == loadGeneration else { return }
+      didFailToSave(error, url: url)
     }
   }
 
-  /// A save conflict: the file changed on disk since it was opened, OR it was
-  /// deleted/moved out from under us (`modificationDate` now `nil`). Either way
-  /// the user must resolve it rather than blindly overwrite.
-  private func diskChangedExternally(_ url: URL) -> Bool {
-    guard let known = diskModificationDate else { return false }
-    guard let current = Self.modificationDate(of: url) else { return true }
-    return current > known
+  private func didSave(_ written: String, modificationDate: Date?) {
+    savedText = written
+    externalChangePending = false
+    saveErrorMessage = nil
+    diskModificationDate = modificationDate ?? diskModificationDate
   }
 
-  /// Reads the on-disk modification date via `FileManager`, which fetches fresh
-  /// each call — unlike `URL.resourceValues`, which caches on the URL instance.
-  private static func modificationDate(of url: URL) -> Date? {
-    (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false)))?[.modificationDate] as? Date
+  /// A refused write is a conflict: the file changed on disk since it was
+  /// opened, OR it was deleted/moved out from under us. Either way the user must
+  /// resolve it rather than blindly overwrite. Anything else is a save error.
+  private func didFailToSave(_ error: FileSystemSourceError, url: URL) {
+    if error.code == .conflict {
+      externalChangePending = true
+      return
+    }
+    saveErrorMessage = error.localizedDescription
+    fileViewerLogger.error("Failed to save \(url.path): \(error.localizedDescription)")
   }
 
   private func reset(to state: LoadState) {
@@ -229,6 +313,7 @@ final class FileViewerModel {
     isMarkdown = false
     isHTML = false
     fileByteCount = 0
+    mediaData = nil
     loadState = state
   }
 }

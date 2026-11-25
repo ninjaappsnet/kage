@@ -19,7 +19,7 @@ struct FileViewerLoadingFeedbackTests {
     return file
   }
 
-  @Test func openingAnotherFileShowsTheSpinnerAgain() throws {
+  @Test func openingAnotherFileShowsTheSpinnerAgain() async throws {
     let first = try Self.makeFile(name: "one.md")
     let second = try Self.makeFile(name: "two.md")
     defer {
@@ -28,36 +28,36 @@ struct FileViewerLoadingFeedbackTests {
     }
 
     let model = FileViewerModel()
-    model.open(first)
+    await model.open(first)
     model.contentDidRender()
     #expect(!model.isPreparingContent)
 
     // The pane is reused rather than rebuilt, and the next document may well be
     // the slow one, so the spinner has to come back for it.
-    model.open(second)
+    await model.open(second)
     #expect(model.isPreparingContent)
   }
 
-  @Test func closingClearsTheSpinnerState() throws {
+  @Test func closingClearsTheSpinnerState() async throws {
     let file = try Self.makeFile(name: "one.md")
     defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
 
     let model = FileViewerModel()
-    model.open(file)
+    await model.open(file)
     // Closing mid-load must not strand the busy cursor and the disabled explorer,
     // which both key off this flag.
     model.close()
     #expect(!model.isPreparingContent)
   }
 
-  @Test func reloadFromDiskShowsTheSpinner() throws {
+  @Test func reloadFromDiskShowsTheSpinner() async throws {
     let file = try Self.makeFile(name: "one.md")
     defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
 
     let model = FileViewerModel()
-    model.open(file)
+    await model.open(file)
     model.contentDidRender()
-    model.reloadFromDisk()
+    await model.reloadFromDisk()
     #expect(model.isPreparingContent)
   }
 }
