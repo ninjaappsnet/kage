@@ -43,7 +43,7 @@ struct RemoteKageAttachedTerminalView: View {
     case (nil, .success):
       ContentUnavailableView("Terminal Unavailable", systemImage: "terminal")
     case (let runtime?, .success(let configuration)):
-      RemoteKageSurfaceRepresentable(configuration: configuration, runtime: runtime, onExit: onExit)
+      RemoteKageAttachedTerminalContainer(host: host, configuration: configuration, runtime: runtime, onExit: onExit)
         // A different session (or host) is a different terminal: rebuild, which
         // detaches the old one, instead of reusing its surface.
         .id(configuration.command)
@@ -53,9 +53,10 @@ struct RemoteKageAttachedTerminalView: View {
 
 /// Bridges the attached surface into SwiftUI. The coordinator owns it for the
 /// view's lifetime; `dismantleNSView` frees it, which ends the local ssh.
-private struct RemoteKageSurfaceRepresentable: NSViewRepresentable {
+struct RemoteKageSurfaceRepresentable: NSViewRepresentable {
   let configuration: RemoteKageAttachedSurface.Configuration
   let runtime: GhosttyRuntime
+  var pasteController: RemotePasteController?
   let onExit: () -> Void
 
   final class Coordinator {
@@ -69,7 +70,14 @@ private struct RemoteKageSurfaceRepresentable: NSViewRepresentable {
   }
 
   func makeCoordinator() -> Coordinator {
-    Coordinator(attached: RemoteKageAttachedSurface(configuration: configuration, runtime: runtime, onExit: onExit))
+    Coordinator(
+      attached: RemoteKageAttachedSurface(
+        configuration: configuration,
+        runtime: runtime,
+        pasteController: pasteController,
+        onExit: onExit
+      )
+    )
   }
 
   func makeNSView(context: Context) -> RemoteKageSurfaceHostView {

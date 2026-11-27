@@ -46,15 +46,23 @@ final class RemoteKageAttachedSurface {
 
   let configuration: Configuration
   private let runtime: GhosttyRuntime
+  /// Uploads file and image pastes to the host; nil pastes as a local terminal does.
+  private let pasteController: RemotePasteController?
   /// Called once when the session ends by itself (detach, session ended,
   /// close requested from inside the terminal). Not called for `close()`.
   var onExit: () -> Void
   private(set) var lifecycle = RemoteKageAttachLifecycle()
   private(set) var surfaceView: GhosttySurfaceView?
 
-  init(configuration: Configuration, runtime: GhosttyRuntime, onExit: @escaping () -> Void) {
+  init(
+    configuration: Configuration,
+    runtime: GhosttyRuntime,
+    pasteController: RemotePasteController? = nil,
+    onExit: @escaping () -> Void
+  ) {
     self.configuration = configuration
     self.runtime = runtime
+    self.pasteController = pasteController
     self.onExit = onExit
   }
 
@@ -83,6 +91,14 @@ final class RemoteKageAttachedSurface {
     )
     Self.wire(view.bridge) { [weak self] in
       self?.sessionEnded()
+    }
+    if let pasteController {
+      view.pasteInterceptor = { [weak pasteController] pasteboard in
+        pasteController?.intercept(pasteboard) ?? false
+      }
+      pasteController.insert = { [weak view] text in
+        view?.sendPastedText(text)
+      }
     }
     surfaceView = view
     return view

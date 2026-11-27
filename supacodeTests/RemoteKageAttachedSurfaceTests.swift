@@ -155,6 +155,40 @@ struct RemoteKageAttachedSurfaceTests {
     #expect(exits == 0)
   }
 
+  @Test func startHandsPastesToThePasteController() throws {
+    let controller = RemotePasteController(uploader: RemotePasteUploader { _ in "/tmp/kage-me/a.png" })
+    let attached = RemoteKageAttachedSurface(
+      configuration: Self.harmlessConfiguration,
+      runtime: GhosttyRuntime(),
+      pasteController: controller,
+      onExit: {}
+    )
+    let view = try #require(attached.start(geometry: .fallback))
+    defer { attached.close() }
+    let interceptor = try #require(view.pasteInterceptor)
+    let pasteboard = NSPasteboard.withUniqueName()
+    defer { pasteboard.releaseGlobally() }
+    pasteboard.declareTypes([.string], owner: nil)
+    pasteboard.setString("plain text", forType: .string)
+    // Text still pastes through the terminal itself.
+    #expect(!interceptor(pasteboard))
+    pasteboard.declareTypes([.png], owner: nil)
+    pasteboard.setData(Data([1]), forType: .png)
+    #expect(interceptor(pasteboard))
+    #expect(controller.status == .uploading(itemCount: 1))
+  }
+
+  @Test func withoutAPasteControllerTheSurfacePastesAsBefore() throws {
+    let attached = RemoteKageAttachedSurface(
+      configuration: Self.harmlessConfiguration,
+      runtime: GhosttyRuntime(),
+      onExit: {}
+    )
+    let view = try #require(attached.start(geometry: .fallback))
+    defer { attached.close() }
+    #expect(view.pasteInterceptor == nil)
+  }
+
   @Test func theProcessEndingReportsExitOnce() throws {
     var exits = 0
     let attached = RemoteKageAttachedSurface(
