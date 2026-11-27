@@ -177,6 +177,8 @@ Everything else lives in `supacode/Features/RemoteKage/`.
 - Checked: unit tests for the plan, names, script (run in a local `/bin/sh`),
   controller and hook; a real Ghostty surface receiving the pasted path in its
   child process; a live upload to mini-1 through the real ssh code (0.17 s).
-  Not driven by hand in the shipped UI by the agent (no Accessibility
-  permission): Cmd+V / drag in a real attached tab is left for Ahmet.
+  On 2026-11-27 Ahmet checked Cmd+V and drag-and-drop in an attached mini-1
+  tab in the dev sandbox: both showed `[Image #N]`, and two CleanShot PNGs
+  landed in mini-1's `/tmp/kage-ahmetcetin/` as `-rw-------` files with
+  sanitized names.
 - Not covered: a custom Ghostty key binding for paste other than Cmd+V.
