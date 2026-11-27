@@ -14,9 +14,11 @@ nonisolated struct RemotePasteLiveHostTests {
     let parts = try #require(Self.destination?.split(separator: "@", maxSplits: 1).map(String.init))
     try #require(parts.count == 2)
     let host = RemoteKageHost(name: "E2E", username: parts[0], address: parts[1])
-    let name = RemotePasteName.make(original: "kage-e2e.txt", token: RemotePasteName.randomToken())
+    let name = RemotePasteName.make(original: "kage-e2e.bin", token: RemotePasteName.randomToken())
+    // Screenshot-sized, so the stdin pipe really streams.
+    let data = Data((0..<(6 * 1024 * 1024)).map { UInt8(truncatingIfNeeded: $0 &* 31) })
 
-    let path = try await RemotePasteUploader.ssh(host: host).upload(RemotePasteItem(name: name, data: Data("e2e".utf8)))
+    let path = try await RemotePasteUploader.ssh(host: host).upload(RemotePasteItem(name: name, data: data))
 
     #expect(path == "/tmp/kage-\(parts[0])/\(name)")
   }
