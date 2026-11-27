@@ -110,6 +110,8 @@ final class GhosttySurfaceView: NSView, Identifiable {
   private var keyboardLayoutChangeKeyUpSuppression: KeyboardLayoutChangeKeyUpSuppression?
   // Agent presence pushed from app state; gates Cmd+V image-paste routing.
   var imagePasteAgents: Set<SkillAgent> = []
+  // Fork: a remote attached terminal uploads file / image pastes (GhosttySurfaceView+RemotePaste.swift).
+  var pasteInterceptor: ((NSPasteboard) -> Bool)?
   private var keyTextAccumulator: [String]?
   private var cellSize: CGSize = .zero
   private var lastScrollbar: ScrollbarState?
@@ -1293,6 +1295,9 @@ final class GhosttySurfaceView: NSView, Identifiable {
     if routeCommandPasteToNativeImagePasteIfNeeded(event) {
       return true
     }
+    if offersPasteToInterceptor(event), pasteInterceptor?(.general) == true {
+      return true
+    }
 
     if let bindingFlags = bindingFlags(for: event, surface: surface) {
       // Forward to the menu only when the chord resolves to an app-owned item, so Ghostty-only
@@ -1670,6 +1675,7 @@ final class GhosttySurfaceView: NSView, Identifiable {
   }
 
   @IBAction func paste(_ sender: Any?) {
+    if pasteInterceptor?(.general) == true { return }
     performBindingAction("paste_from_clipboard")
   }
 
@@ -1955,6 +1961,7 @@ extension GhosttySurfaceView {
   }
 
   override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+    if pasteInterceptor?(sender.draggingPasteboard) == true { return true }
     let pasteboard = sender.draggingPasteboard
     let content: String?
     if let url = pasteboard.string(forType: .URL) {

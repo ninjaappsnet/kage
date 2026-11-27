@@ -62,7 +62,10 @@ pid() { pgrep -f "$APP/Contents/MacOS/" | head -1 || true; }
 case "${1:-}" in
   prepare) prepare ;;
   launch)
-    [ -d "$APP" ] || prepare
+    # Re-copy when the Debug build is newer, so launch never runs a stale copy.
+    if [ ! -d "$APP" ] || [ "$SOURCE_APP/Contents/MacOS/Kage.debug.dylib" -nt "$APP/Contents/MacOS/Kage.debug.dylib" ]; then
+      prepare
+    fi
     seed
     if [ -n "$(pid)" ]; then echo "already running (pid $(pid))"; exit 0; fi
     extra_env=()

@@ -155,6 +155,74 @@ struct RemoteKageAttachedSurfaceTests {
     #expect(exits == 0)
   }
 
+  @Test func startHandsPastesToThePasteController() throws {
+    let controller = RemotePasteController(uploader: RemotePasteUploader { _ in "/tmp/kage-me/a.png" })
+    let attached = RemoteKageAttachedSurface(
+      configuration: Self.harmlessConfiguration,
+      runtime: GhosttyRuntime(),
+      pasteController: controller,
+      onExit: {}
+    )
+    let view = try #require(attached.start(geometry: .fallback))
+    defer { attached.close() }
+    let interceptor = try #require(view.pasteInterceptor)
+    let pasteboard = NSPasteboard.withUniqueName()
+    defer { pasteboard.releaseGlobally() }
+    pasteboard.declareTypes([.string], owner: nil)
+    pasteboard.setString("plain text", forType: .string)
+    // Text still pastes through the terminal itself.
+    #expect(!interceptor(pasteboard))
+    pasteboard.declareTypes([.png], owner: nil)
+    pasteboard.setData(Data([1]), forType: .png)
+    #expect(interceptor(pasteboard))
+    #expect(controller.status == .uploading(itemCount: 1))
+  }
+
+  /// End to end on this Mac: a finished upload's path reaches the terminal's
+  /// child process with no key event in flight (an upload ends long after the
+  /// key press), here a raw-mode `head` that writes what it reads to a file.
+  @Test(.timeLimit(.minutes(1)))
+  func uploadedPathsArePastedIntoTheTerminalProcess() async throws {
+    let output = FileManager.default.temporaryDirectory.appending(path: "remote-paste-pty-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: output) }
+    let remotePath = "/tmp/kage-me/pasted-image-abc123.png"
+    let script = "stty raw -echo; head -c \(remotePath.utf8.count) > \(output.path)"
+    let configuration = RemoteKageAttachedSurface.Configuration(
+      command: "/bin/sh -c " + SSHCommand.shellQuote(script),
+      workingDirectory: URL.homeDirectory,
+      environment: [:],
+      commandWrapper: [],
+      disableShellIntegration: true
+    )
+    let controller = RemotePasteController(uploader: RemotePasteUploader { _ in remotePath }, token: { "abc123" })
+    let (exited, exit) = AsyncStream<Void>.makeStream()
+    let attached = RemoteKageAttachedSurface(
+      configuration: configuration,
+      runtime: GhosttyRuntime(),
+      pasteController: controller,
+      onExit: { exit.finish() }
+    )
+    _ = try #require(attached.start(geometry: .fallback))
+    defer { attached.close() }
+
+    #expect(controller.handle(plan: .uploadImage, imagePNG: Data([1])))
+    await controller.waitUntilIdle()
+    for await _ in exited {}
+
+    #expect(try String(contentsOf: output, encoding: .utf8) == remotePath)
+  }
+
+  @Test func withoutAPasteControllerTheSurfacePastesAsBefore() throws {
+    let attached = RemoteKageAttachedSurface(
+      configuration: Self.harmlessConfiguration,
+      runtime: GhosttyRuntime(),
+      onExit: {}
+    )
+    let view = try #require(attached.start(geometry: .fallback))
+    defer { attached.close() }
+    #expect(view.pasteInterceptor == nil)
+  }
+
   @Test func theProcessEndingReportsExitOnce() throws {
     var exits = 0
     let attached = RemoteKageAttachedSurface(
