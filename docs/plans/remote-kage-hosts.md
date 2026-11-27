@@ -160,3 +160,23 @@ Everything else lives in `supacode/Features/RemoteKage/`.
   claim leadership, shipped on the host too.
 - ctrl+\\ (resolved): a real key press detaches; text sent via `sendText`
   does not, because bash wraps it in bracketed paste.
+
+## Follow-up: paste uploads (2026-11-27)
+
+- Asked by Ahmet: a screenshot pasted into an attached remote terminal pasted
+  this Mac's path, which the host's Claude Code can't open. Now files and
+  clipboard images are uploaded to the host first and the host path pasted;
+  Claude Code there shows `[Image #N]` (checked by hand on mini-1 with a probe
+  path before building: it showed `[Image #2]`).
+- Decisions: plain `ssh -T` with stdin over the ControlMaster, not the
+  `host serve` `write` op (no delete op for the 7-day prune, no folder mode,
+  needs a held session and 1.4.1 on the host). Folder `/tmp/kage-<user>`, not
+  `/tmp/kage`: `/tmp` is shared, so a fixed name could belong to someone else.
+  `/tmp` is only swept at boot on macOS 27 (`/etc/periodic` is gone), so each
+  upload prunes files older than 7 days itself.
+- Checked: unit tests for the plan, names, script (run in a local `/bin/sh`),
+  controller and hook; a real Ghostty surface receiving the pasted path in its
+  child process; a live upload to mini-1 through the real ssh code (0.17 s).
+  Not driven by hand in the shipped UI by the agent (no Accessibility
+  permission): Cmd+V / drag in a real attached tab is left for Ahmet.
+- Not covered: a custom Ghostty key binding for paste other than Cmd+V.
