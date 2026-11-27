@@ -182,3 +182,7 @@ Everything else lives in `supacode/Features/RemoteKage/`.
   landed in mini-1's `/tmp/kage-ahmetcetin/` as `-rw-------` files with
   sanitized names.
 - Not covered: a custom Ghostty key binding for paste other than Cmd+V.
+- Released in 1.5.0 on 2026-11-27 (merge dfd49eef, bump 02d7a1a1, PR #14). The
+  main run's `test` job failed twice on 1-minute time-outs
+  (`RemoteFileServerTests`) while mini-2 ran other heavy work (load 45–160);
+  the third attempt, at load ~4, passed and published.
