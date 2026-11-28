@@ -16,4 +16,6 @@ import Foundation
 /// panel's "Updates when Claude Code next runs as this account" in place.
 nonisolated enum ClaudeAccessTokenRenewal {
   static let arguments = ["doctor"]
+  /// It takes about 1.5 s; a run past this is stuck (say, waiting for a terminal).
+  static let timeLimit: Duration = .seconds(60)
 }

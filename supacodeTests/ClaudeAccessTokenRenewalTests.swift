@@ -1,8 +1,10 @@
 import ComposableArchitecture
+import ConcurrencyExtras
 import Dependencies
 import DependenciesTestSupport
 import Foundation
 import Sharing
+import SupacodeSettingsShared
 import Testing
 
 @testable import supacode
@@ -123,5 +125,39 @@ struct ClaudeAccessTokenRenewalTests {
     await store.receive(\.accessTokenRenewed)
     await store.finish()
     #expect(store.state.usageFailures["work"] == .tokenExpired)
+  }
+}
+
+/// `claude doctor` is run with a time limit, so a release that waits for a
+/// terminal can't leave a process behind per account.
+struct ClaudeCLIRunnerTimeoutTests {
+  @Test(.timeLimit(.minutes(1))) func aCommandThatOutlivesItsLimitIsTerminated() async throws {
+    let clock = TestClock()
+    let terminated = LockIsolated(false)
+    let (events, continuation) = AsyncThrowingStream<ShellStreamEvent, Error>.makeStream()
+    let process = StreamingShellProcess(events: events) {
+      terminated.setValue(true)
+      continuation.finish(throwing: CancellationError())
+    }
+    let run = Task { try await ClaudeCLIRunner.drain(process, timeout: .seconds(60), clock: clock) }
+    // Let the watchdog start sleeping before time moves.
+    await Task.megaYield()
+    await clock.advance(by: .seconds(59))
+    #expect(!terminated.value)
+    await clock.advance(by: .seconds(1))
+    await #expect(throws: ClaudeAccountsError.self) { try await run.value }
+    #expect(terminated.value)
+  }
+
+  @Test(.timeLimit(.minutes(1))) func aCommandThatFinishesInTimeIsLeftAlone() async throws {
+    let clock = TestClock()
+    let terminated = LockIsolated(false)
+    let (events, continuation) = AsyncThrowingStream<ShellStreamEvent, Error>.makeStream()
+    let process = StreamingShellProcess(events: events) { terminated.setValue(true) }
+    continuation.yield(.finished(ShellOutput(stdout: "ok", stderr: "", exitCode: 0)))
+    continuation.finish()
+    try await ClaudeCLIRunner.drain(process, timeout: .seconds(60), clock: clock)
+    await clock.advance(by: .seconds(120))
+    #expect(!terminated.value)
   }
 }
