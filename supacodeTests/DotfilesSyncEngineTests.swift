@@ -10,19 +10,23 @@ struct DotfilesSyncEngineTests {
   private let sandbox: URL
   private let remote: URL
 
-  init() throws {
+  init() async throws {
     sandbox = FileManager.default.temporaryDirectory
       .appending(path: "kage-dotfiles-\(UUID().uuidString)")
       .resolvingSymlinksInPath()
     remote = sandbox.appending(path: "remote.git")
     try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
-    try Self.runGit(["init", "-q", "--bare", "-b", "main", remote.path], in: sandbox)
+    try await Self.runGit(["init", "-q", "--bare", "-b", "main", remote.path], in: sandbox)
   }
 
   // MARK: - Harness.
 
+  /// Never blocks a thread: the suite runs hundreds of git commands, and the
+  /// runtime can run the engine's actor jobs on the main thread, so a blocking
+  /// wait (`waitUntilExit`) stalled every main-actor test in the same test
+  /// process for about a minute under CI load.
   @discardableResult
-  nonisolated private static func runGit(_ arguments: [String], in directory: URL) throws -> Data {
+  nonisolated private static func runGit(_ arguments: [String], in directory: URL) async throws -> Data {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
     process.arguments = arguments
@@ -35,14 +39,35 @@ struct DotfilesSyncEngineTests {
     let errors = Pipe()
     process.standardOutput = output
     process.standardError = errors
-    try process.run()
-    let data = output.fileHandleForReading.readDataToEndOfFile()
-    let message = errors.fileHandleForReading.readDataToEndOfFile()
-    process.waitUntilExit()
+    let data = drain(output.fileHandleForReading)
+    let message = drain(errors.fileHandleForReading)
+    try await process.runToExit()
+    let stdout = await data.value
+    let stderr = await message.value
     guard process.terminationStatus == 0 else {
-      throw DotfilesGitError(arguments: arguments, message: String(bytes: message, encoding: .utf8) ?? "")
+      throw DotfilesGitError(arguments: arguments, message: String(bytes: stderr, encoding: .utf8) ?? "")
     }
-    return data
+    return stdout
+  }
+
+  /// Everything `handle` delivers until end of file, read as it arrives so a
+  /// large output never fills the pipe.
+  nonisolated private static func drain(_ handle: FileHandle) -> Task<Data, Never> {
+    let (chunks, continuation) = AsyncStream<Data>.makeStream()
+    handle.readabilityHandler = { handle in
+      let chunk = handle.availableData
+      if chunk.isEmpty {
+        handle.readabilityHandler = nil
+        continuation.finish()
+      } else {
+        continuation.yield(chunk)
+      }
+    }
+    return Task {
+      var all = Data()
+      for await chunk in chunks { all.append(chunk) }
+      return all
+    }
   }
 
   private func home(_ name: String) -> URL { sandbox.appending(path: "Users/\(name)") }
@@ -64,8 +89,8 @@ struct DotfilesSyncEngineTests {
         roots: DotfilesSyncRoot.defaults(kageConfigPath: ".config/kage"),
         knownRepositoryRoots: knownRoots,
         machineName: name,
-        git: { arguments, directory in try Self.runGit(arguments, in: directory) },
-        gitNetwork: { arguments, directory in try Self.runGit(arguments, in: directory) },
+        git: { arguments, directory in try await Self.runGit(arguments, in: directory) },
+        gitNetwork: { arguments, directory in try await Self.runGit(arguments, in: directory) },
         resolveText: resolveText,
         versionChoices: choices,
         progress: { update in progress?.withValue { $0.append(update) } }
@@ -84,11 +109,11 @@ struct DotfilesSyncEngineTests {
   }
 
   /// A checkout of the same project at `path` under `home`, plus Claude's memory for it.
-  private func project(at path: String, in home: URL, memory: String? = nil) throws -> URL {
+  private func project(at path: String, in home: URL, memory: String? = nil) async throws -> URL {
     let root = home.appending(path: path)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    try Self.runGit(["init", "-q"], in: root)
-    try Self.runGit(["remote", "add", "origin", "git@github.com:Owner/Proj.git"], in: root)
+    try await Self.runGit(["init", "-q"], in: root)
+    try await Self.runGit(["remote", "add", "origin", "git@github.com:Owner/Proj.git"], in: root)
     if let memory {
       let folder = DotfilesProjectIdentity.claudeProjectDirectoryName(for: root.path)
       try write(memory, ".claude/projects/\(folder)/memory/MEMORY.md", in: home)
@@ -110,8 +135,8 @@ struct DotfilesSyncEngineTests {
     try write("skill body\n", ".claude/skills/demo/SKILL.md", in: alice)
     try write("never synced\n", ".claude/history.jsonl", in: alice)
     try write("font-size = 14\n", ".config/kage/config.ghostty", in: alice)
-    let aliceProject = try project(at: "code/proj", in: alice, memory: "- remembered\n")
-    let bobProject = try project(at: "work/projects/proj", in: bob)
+    let aliceProject = try await project(at: "code/proj", in: alice, memory: "- remembered\n")
+    let bobProject = try await project(at: "work/projects/proj", in: bob)
 
     let first = try await engine("alice", knownRoots: [aliceProject]).sync()
     #expect(first.pushed)
@@ -123,9 +148,9 @@ struct DotfilesSyncEngineTests {
     #expect(read(".config/kage/config.ghostty", in: bob) == "font-size = 14\n")
     #expect(read(".claude/history.jsonl", in: bob) == nil)
     #expect(read(memoryPath(for: bobProject), in: bob) == "- remembered\n")
-    let stored = try Self.runGit(["show", "main:claude/settings.json"], in: remote)
+    let stored = try await Self.runGit(["show", "main:claude/settings.json"], in: remote)
     #expect((String(bytes: stored, encoding: .utf8) ?? "").contains("{{HOME}}/.claude/status.sh"))
-    let memory = try Self.runGit(["show", "main:claude-memory/github.com/owner/proj/MEMORY.md"], in: remote)
+    let memory = try await Self.runGit(["show", "main:claude-memory/github.com/owner/proj/MEMORY.md"], in: remote)
     #expect(String(bytes: memory, encoding: .utf8) == "- remembered\n")
   }
 
@@ -133,7 +158,7 @@ struct DotfilesSyncEngineTests {
     let alice = home("alice")
     let bob = home("bob")
     try write("# Rules\n", ".claude/CLAUDE.md", in: alice)
-    let aliceProject = try project(at: "code/proj", in: alice, memory: "- remembered\n")
+    let aliceProject = try await project(at: "code/proj", in: alice, memory: "- remembered\n")
     _ = try await engine("alice", knownRoots: [aliceProject]).sync()
     // Bob doesn't have the project: its memory must survive his passes.
     _ = try await engine("bob").sync()
@@ -179,7 +204,7 @@ struct DotfilesSyncEngineTests {
     try write("# Rules\n", ".claude/CLAUDE.md", in: alice)
     let report = try await engine("alice").sync()
     #expect(report.blockedSecrets == ["claude/settings.json"])
-    #expect((try? Self.runGit(["show", "main:claude/settings.json"], in: remote)) == nil)
+    #expect((try? await Self.runGit(["show", "main:claude/settings.json"], in: remote)) == nil)
     #expect(read(".claude/settings.json", in: alice)?.contains("sk-ant") == true)
   }
 
@@ -203,14 +228,14 @@ struct DotfilesSyncEngineTests {
     // A pass killed mid-export: a half-written file sits in the clone.
     try write("half written\n", ".kage/dotfiles/claude/stray.md", in: alice)
     _ = try await engine("alice").sync()
-    #expect((try? Self.runGit(["show", "main:claude/stray.md"], in: remote)) == nil)
+    #expect((try? await Self.runGit(["show", "main:claude/stray.md"], in: remote)) == nil)
   }
 
   @Test func clashingMemoryGoesToTheResolverThenFallsBackToLocal() async throws {
     let alice = home("alice")
     let bob = home("bob")
-    let aliceProject = try project(at: "code/proj", in: alice, memory: "line\n")
-    let bobProject = try project(at: "work/proj", in: bob)
+    let aliceProject = try await project(at: "code/proj", in: alice, memory: "line\n")
+    let bobProject = try await project(at: "work/proj", in: bob)
     _ = try await engine("alice", knownRoots: [aliceProject]).sync()
     _ = try await engine("bob", knownRoots: [bobProject]).sync()
     try write("alice line\n", memoryPath(for: aliceProject), in: alice)
@@ -293,7 +318,7 @@ struct DotfilesSyncEngineTests {
     #expect(read(".agents/skills/tool/old.md", in: bob) == nil)
     #expect(read(".kage/dotfiles-conflicts/replaced/agents/skills/tool/SKILL.md", in: bob) == "version 1\n")
     #expect(read(".kage/dotfiles-conflicts/replaced/agents/skills/tool/old.md", in: bob) == "only in 1\n")
-    let stored = try Self.runGit(["show", "main:agents/skills/tool/SKILL.md"], in: remote)
+    let stored = try await Self.runGit(["show", "main:agents/skills/tool/SKILL.md"], in: remote)
     #expect(String(bytes: stored, encoding: .utf8) == "version 2\n")
   }
 
@@ -315,8 +340,8 @@ struct DotfilesSyncEngineTests {
     let alice = home("alice")
     let bob = home("bob")
     let count = DotfilesSyncEngine.maximumModelMergesPerPass + 2
-    let aliceProject = try project(at: "code/proj", in: alice)
-    let bobProject = try project(at: "work/proj", in: bob)
+    let aliceProject = try await project(at: "code/proj", in: alice)
+    let bobProject = try await project(at: "work/proj", in: bob)
     let memoryFolder: (URL) -> String = { root in
       ".claude/projects/\(DotfilesProjectIdentity.claudeProjectDirectoryName(for: root.path))/memory"
     }
