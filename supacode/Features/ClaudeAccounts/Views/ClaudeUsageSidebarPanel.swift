@@ -46,11 +46,23 @@ struct ClaudeUsageSidebarPanel: View {
   }
 
   private func placeholder(for id: ClaudeAccountID) -> String {
-    switch store.statuses[id] {
-    case .loaded(let status) where !status.loggedIn: "Not logged in"
-    case .loaded: "Usage unavailable"
-    case .failed: "Status unavailable"
-    case .loading, nil: "Checking…"
+    Self.placeholder(status: store.statuses[id], usageFailure: store.usageFailures[id])
+  }
+
+  static func placeholder(
+    status: ClaudeAccountsFeature.StatusEntry?,
+    usageFailure: ClaudeUsageError?
+  ) -> String {
+    switch (status, usageFailure) {
+    case (.loaded(let status), _) where !status.loggedIn: "Not logged in"
+    // The login is fine; the short-lived token Kage reads is refreshed only by
+    // Claude Code running as the account, which Kage never does for it.
+    case (.loaded, .tokenExpired): "Updates when Claude Code next runs as this account"
+    case (.loaded, .httpStatus(let code)): "Usage unavailable (HTTP \(code))"
+    case (.loaded, .notLoggedIn): "Not logged in"
+    case (.loaded, nil): "Usage unavailable"
+    case (.failed, _): "Status unavailable"
+    case (.loading, _), (nil, _): "Checking…"
     }
   }
 }

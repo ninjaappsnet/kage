@@ -9,9 +9,22 @@ import SupacodeSettingsShared
 /// surface resolves the assignment in `ClaudeAccountEnvironment`.
 nonisolated enum ClaudeTabRestart {
   /// Claude Code running on the old surface resumes in the new shell. History
-  /// (`projects/`) is shared by every account, and Kage has no Claude session
-  /// id, so `--continue` picks up the folder's latest conversation.
+  /// (`projects/`) is shared by every account. This plain command is the
+  /// fallback: `relaunch(...)` normally replays the running process instead.
   static let resume = TerminalTabRestart.Resume(agent: .claude, command: "claude --continue")
+
+  /// The old surface's Claude Code launch replayed (`ClaudeLaunchReplay`): the
+  /// variables and flags it was started with and `--resume <its session>`. Nil
+  /// when the restart resumes no Claude, or the process can't be read.
+  @MainActor
+  static func relaunch(
+    resume: TerminalTabRestart.Resume?,
+    agentsOnSurface: Set<SkillAgent>,
+    pids: Set<pid_t>
+  ) -> ClaudeLaunchReplay.Relaunch? {
+    guard resume?.agent == .claude, agentsOnSurface.contains(.claude), !pids.isEmpty else { return nil }
+    return ClaudeProcessInspector.relaunch(pids: pids)
+  }
 
   /// The account the tab's session runs as: the one its live surface started
   /// under, else what a new session in the tab would resolve to.
@@ -51,7 +64,8 @@ nonisolated enum ClaudeTabRestart {
         """
         Restarting ends this tab's terminal session and stops everything running in it, \
         such as dev servers and builds. A new shell starts in the same folder as \(account.name). \
-        If Claude Code is running, it resumes your latest conversation there as \(account.name).
+        If Claude Code is running, it resumes the same conversation there as \(account.name), \
+        started the way it was before.
         """
       )
     }
@@ -84,16 +98,44 @@ extension ClaudeAccountsFeature {
   }
 
   func reduceRestartTabAlert(_ state: inout State, action: PresentationAction<RestartTabAlert>) -> Effect<Action> {
-    @Dependency(TerminalClient.self) var terminalClient
     state.restartTabAlert = nil
     guard case .presented(.confirm(let accountID, let worktree, let tabID)) = action,
       state.file.account(id: accountID) != nil
     else { return .none }
+    return restartTab(&state, accountID: accountID, worktree: worktree, tabID: tabID, focus: true)
+  }
+
+  /// A viewing Mac's restart: it confirmed on its side, so no alert here, but
+  /// the same checks as a local request.
+  func reduceRestartTabConfirmed(
+    _ state: inout State,
+    accountID: ClaudeAccountID,
+    worktree: Worktree,
+    tabID: TabID,
+    focus: Bool
+  ) -> Effect<Action> {
+    @Dependency(TerminalClient.self) var terminalClient
+    guard state.file.account(id: accountID) != nil,
+      !worktree.isMissing,
+      worktree.localWorkingDirectory != nil,
+      terminalClient.tabCanRename(worktree.id, tabID)
+    else { return .none }
+    return restartTab(&state, accountID: accountID, worktree: worktree, tabID: tabID, focus: focus)
+  }
+
+  private func restartTab(
+    _ state: inout State,
+    accountID: ClaudeAccountID,
+    worktree: Worktree,
+    tabID: TabID,
+    focus: Bool
+  ) -> Effect<Action> {
+    @Dependency(TerminalClient.self) var terminalClient
     // Stored before the restart: the new surface reads it as it is built. Main
     // is stored explicitly too, so a repository override cannot win the tab back.
     state.$file.withLock { $0.tabAccountIDs[tabID.rawValue.uuidString] = accountID }
     return .run { [terminalClient] _ in
-      await terminalClient.send(.restartTab(worktree, tabID: tabID, resume: ClaudeTabRestart.resume))
+      await terminalClient.send(.restartTab(worktree, tabID: tabID, resume: ClaudeTabRestart.resume, focus: focus))
     }
   }
 }

@@ -43,6 +43,36 @@ nonisolated enum RemoteKageCommand {
     return arguments
   }
 
+  /// `host claude-tab new` on the host: assigns the host account, then creates
+  /// the tab in the background like `tab new`.
+  static func newClaudeAccountTabArguments(
+    worktreeID: String,
+    tabID: UUID,
+    accountID: String,
+    command: String?
+  ) -> [String] {
+    var arguments = [
+      "host", "claude-tab", "new",
+      "-w", WorktreeStatusQueryResponse.encoded(id: worktreeID),
+      "--id", tabID.uuidString,
+      "--account", accountID,
+    ]
+    if let command {
+      arguments.append("--input=\(command)")
+    }
+    return arguments
+  }
+
+  /// `host claude-tab restart` on the host.
+  static func restartTabArguments(worktreeID: String, tabID: String, accountID: String) -> [String] {
+    [
+      "host", "claude-tab", "restart",
+      "-w", WorktreeStatusQueryResponse.encoded(id: worktreeID),
+      "--tab", tabID,
+      "--account", accountID,
+    ]
+  }
+
   /// Characters that never belong in a host name or login, so a value carrying
   /// them is refused before it reaches ssh's argv.
   private static let unsafeCharacters = CharacterSet.whitespacesAndNewlines

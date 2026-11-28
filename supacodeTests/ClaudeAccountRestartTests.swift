@@ -34,6 +34,22 @@ struct TerminalTabRestartResumeTests {
     #expect(TerminalTabRestart.initialInput(resume: nil, agentsOnSurface: [.claude]) == nil)
   }
 
+  @Test func theReplayedLaunchReplacesThePlainResumeCommand() {
+    let replayed = "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude --resume 4e7fcb91-bc51-4718-8aa6-9d3e02009ac5"
+    #expect(
+      TerminalTabRestart.initialInput(resume: resume, agentsOnSurface: [.claude], relaunchCommand: replayed)
+        == replayed + "\n")
+    #expect(
+      TerminalTabRestart.initialInput(resume: resume, agentsOnSurface: [.claude], relaunchCommand: nil)
+        == "claude --continue\n")
+  }
+
+  @Test func aReplayedLaunchNeverTypesIntoAShellWhereTheAgentWasNotRunning() {
+    #expect(
+      TerminalTabRestart.initialInput(resume: resume, agentsOnSurface: [], relaunchCommand: "claude --verbose")
+        == nil)
+  }
+
   @Test func theSeedKeepsTheFolderAndCarriesTheInputAsALiveOnlyLaunch() {
     let seed = TerminalTabRestart.seed(workingDirectory: "/tmp/repo/sub", initialInput: "claude --continue\n")
     #expect(

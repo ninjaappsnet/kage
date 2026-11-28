@@ -14,9 +14,15 @@ nonisolated enum TerminalTabRestart {
 
   /// The new shell's initial input: the resume command, terminated so it
   /// submits, when its agent was on the old surface; nil otherwise.
-  static func initialInput(resume: Resume?, agentsOnSurface: Set<SkillAgent>) -> String? {
+  /// `relaunchCommand`, when given, is the agent's own launch replayed (its
+  /// variables, flags and conversation) and replaces the plain resume command.
+  static func initialInput(
+    resume: Resume?,
+    agentsOnSurface: Set<SkillAgent>,
+    relaunchCommand: String? = nil
+  ) -> String? {
     guard let resume, agentsOnSurface.contains(resume.agent) else { return nil }
-    let command = resume.command.trimmingCharacters(in: .whitespacesAndNewlines)
+    let command = (relaunchCommand ?? resume.command).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !command.isEmpty else { return nil }
     return command + "\n"
   }

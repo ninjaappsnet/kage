@@ -22,6 +22,8 @@ nonisolated enum HostSnapshotBuilder {
     var usesZmx: Bool
     /// The surface's current working directory, nil when unknown.
     var workingDirectory: String?
+    /// The Claude account the surface started under, nil when unknown.
+    var claudeAccountID: String?
   }
 
   /// One tracked agent on a surface (`AgentPresenceFeature` record).
@@ -42,6 +44,7 @@ nonisolated enum HostSnapshotBuilder {
     var cliPath: String?
     var kageVersion: String
     var machineName: String
+    var claudeAccounts: [HostSnapshot.ClaudeAccountInfo]?
   }
 
   static func build(_ inputs: Inputs) -> HostSnapshot {
@@ -74,7 +77,8 @@ nonisolated enum HostSnapshotBuilder {
                 agents: (agentsBySurface[tab.surfaceID] ?? [])
                   .sorted { ($0.kind, $0.activity) < ($1.kind, $1.activity) }
                   .map { HostSnapshot.Agent(kind: $0.kind, activity: $0.activity) },
-                workingDirectory: tab.workingDirectory
+                workingDirectory: tab.workingDirectory,
+                claudeAccountID: tab.claudeAccountID
               )
             }
           )
@@ -88,8 +92,27 @@ nonisolated enum HostSnapshotBuilder {
       zmxPath: inputs.zmxPath,
       cliPath: inputs.cliPath,
       workspaces: inputs.sidebar.workspaces.values.map { .init(id: $0.id, name: $0.name) },
-      repositories: repositories
+      repositories: repositories,
+      claudeAccounts: inputs.claudeAccounts
     )
+  }
+
+  /// Every account on this Mac, main first, as the snapshot reports them.
+  @MainActor
+  static func claudeAccounts(
+    file: ClaudeAccountsFile,
+    usages: [ClaudeAccountID: ClaudeAccountsFeature.UsageSnapshot],
+    now: Date = .now
+  ) -> [HostSnapshot.ClaudeAccountInfo] {
+    let defaultID = file.resolvedAccount(tabID: nil, repositoryRootPath: nil).id
+    return file.allAccounts.map { account in
+      HostSnapshot.ClaudeAccountInfo(
+        id: account.id,
+        name: account.name,
+        menuTitle: ClaudeAccountsFeature.State.menuTitle(for: account, usage: usages[account.id], now: now),
+        isDefault: account.id == defaultID
+      )
+    }
   }
 
   /// The compact one-line JSON the CLI prints verbatim.

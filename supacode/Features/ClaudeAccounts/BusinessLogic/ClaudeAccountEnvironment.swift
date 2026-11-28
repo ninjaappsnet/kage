@@ -47,8 +47,11 @@ nonisolated enum ClaudeAccountEnvironment {
       repositoryRootPath: normalizedPath(worktree.repositoryRootURL.path(percentEncoded: false))
     )
     ClaudeSurfaceAccounts.byContentID[request.contentID.rawValue] = account.id
-    guard let directory = account.configDirectoryPath else { return [:] }
-    return [ClaudeAccount.configDirectoryVariable: directory]
+    // A restart's carried-over secrets (`ClaudeRelaunchEnvironment`); the
+    // account's own directory always wins.
+    let relaunched = ClaudeRelaunchEnvironment.take(forTab: tabID)
+    guard let directory = account.configDirectoryPath else { return relaunched }
+    return relaunched.merging([ClaudeAccount.configDirectoryVariable: directory]) { _, account in account }
   }
 
   /// The account a new tab or split takes: the one explicitly `requested` from the

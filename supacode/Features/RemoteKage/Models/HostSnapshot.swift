@@ -25,6 +25,19 @@ nonisolated struct HostSnapshot: Codable, Equatable, Sendable {
   /// The host's local repositories in its sidebar order. Repositories the host
   /// itself reaches over SSH are omitted.
   var repositories: [Repository]
+  /// The host's Claude Code accounts, main first. Nil from a host that predates
+  /// them, which also can't open or restart tabs under an account.
+  var claudeAccounts: [ClaudeAccountInfo]?
+
+  /// One of the host's Claude accounts (`ClaudeAccount` on the host).
+  nonisolated struct ClaudeAccountInfo: Codable, Equatable, Sendable, Identifiable {
+    var id: String
+    var name: String
+    /// The host's menu label, usage included ("Work — 42% weekly · resets in 2d 5h").
+    var menuTitle: String
+    /// New tabs on the host use it when nothing more specific applies.
+    var isDefault: Bool
+  }
 
   nonisolated struct Workspace: Codable, Equatable, Sendable, Identifiable {
     var id: String
@@ -74,6 +87,9 @@ nonisolated struct HostSnapshot: Codable, Equatable, Sendable {
     /// The surface's current working directory on the host (as its shell
     /// reported it), nil when unknown. Optional on the wire: older hosts omit it.
     var workingDirectory: String?
+    /// The Claude account the tab's session started under (a `claudeAccounts`
+    /// id), nil when unknown or from an older host.
+    var claudeAccountID: String?
   }
 
   nonisolated struct Agent: Codable, Equatable, Sendable {

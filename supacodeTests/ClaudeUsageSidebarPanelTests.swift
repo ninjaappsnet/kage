@@ -99,3 +99,73 @@ struct SidebarBottomCardAnnouncementTests {
     #expect(SidebarBottomCardView.Slot.none.withoutAnnouncements == .none)
   }
 }
+
+// MARK: - Why an account shows no usage.
+
+struct ClaudeUsageSidebarPlaceholderTests {
+  private let loggedIn = ClaudeAccountsFeature.StatusEntry.loaded(ClaudeAuthStatus(loggedIn: true))
+
+  @Test func anExpiredAccessTokenSaysWhenTheUsageComesBackInsteadOfAskingForALogin() {
+    // The login (refresh token) is still good; only Claude Code running as the
+    // account refreshes the short-lived token Kage reads.
+    #expect(
+      ClaudeUsageSidebarPanel.placeholder(status: loggedIn, usageFailure: .tokenExpired)
+        == "Updates when Claude Code next runs as this account")
+  }
+
+  @Test func otherFailuresNameTheirCause() {
+    #expect(
+      ClaudeUsageSidebarPanel.placeholder(status: loggedIn, usageFailure: .httpStatus(429))
+        == "Usage unavailable (HTTP 429)")
+    #expect(ClaudeUsageSidebarPanel.placeholder(status: loggedIn, usageFailure: .notLoggedIn) == "Not logged in")
+    #expect(ClaudeUsageSidebarPanel.placeholder(status: loggedIn, usageFailure: nil) == "Usage unavailable")
+  }
+
+  @Test func theLoginStatusComesFirst() {
+    #expect(
+      ClaudeUsageSidebarPanel.placeholder(
+        status: .loaded(ClaudeAuthStatus(loggedIn: false)), usageFailure: .tokenExpired) == "Not logged in")
+    #expect(ClaudeUsageSidebarPanel.placeholder(status: .failed("x"), usageFailure: nil) == "Status unavailable")
+    #expect(ClaudeUsageSidebarPanel.placeholder(status: nil, usageFailure: nil) == "Checking…")
+  }
+}
+
+@MainActor
+struct ClaudeUsageFailureTests {
+  private let work = ClaudeAccount(id: "work", name: "Work", configDirectoryPath: "/tmp/kage-claude/work")
+  private let weekly = ClaudeUsage(fiveHour: nil, sevenDay: .init(percentUsed: 42, resetsAt: nil))
+
+  private func state() -> ClaudeAccountsFeature.State {
+    let state = ClaudeAccountsFeature.State()
+    state.$file.withLock { file in
+      file = ClaudeAccountsFile()
+      file.accounts = [work]
+    }
+    return state
+  }
+
+  @Test(.dependencies) func aFailedFetchRemembersWhyAndASuccessForgetsIt() async {
+    let fails = LockIsolated(true)
+    let now = LockIsolated(Date(timeIntervalSince1970: 1_000_000))
+    let store = TestStore(initialState: state()) {
+      ClaudeAccountsFeature()
+    } withDependencies: {
+      $0.date = DateGenerator { now.value }
+      $0[ClaudeAccountsClient.self].usage = { [weekly] _ in
+        if fails.value { throw ClaudeUsageError.tokenExpired }
+        return weekly
+      }
+    }
+    store.exhaustivity = .off(showSkippedAssertions: false)
+    await store.send(.refreshUsage("work"))
+    await store.receive(\.usageLoaded)
+    #expect(store.state.usageFailures["work"] == .tokenExpired)
+
+    fails.setValue(false)
+    now.withValue { $0.addTimeInterval(ClaudeAccountsFeature.usageMinimumInterval + 1) }
+    await store.send(.refreshUsage("work"))
+    await store.receive(\.usageLoaded)
+    #expect(store.state.usageFailures["work"] == nil)
+    #expect(store.state.usages["work"]?.usage == weekly)
+  }
+}

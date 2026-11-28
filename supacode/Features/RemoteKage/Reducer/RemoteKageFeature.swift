@@ -45,6 +45,8 @@ struct RemoteKageFeature {
     var lastError: String?
     /// Tabs requested with `newTab` that the host hasn't reported yet.
     var pendingNewTabs: [RemoteKageTabKey: PendingNewTab] = [:]
+    /// Tabs asked to restart (`restartTab`) whose new session the host hasn't reported yet.
+    var pendingRestarts: [RemoteKageTabKey: PendingRestart] = [:]
 
     // Polling bookkeeping. Changes on every tick and no view reads it, so it
     // stays out of observation.
@@ -95,6 +97,17 @@ struct RemoteKageFeature {
     var snapshotsWaited = 0
   }
 
+  struct PendingRestart: Equatable, Sendable {
+    /// The session the restart ends; a different one in a snapshot is the new session.
+    var oldSession: String?
+    /// The tab was attached here when the restart was asked for.
+    var reattach: Bool
+    var snapshotsWaited = 0
+  }
+
+  /// Wait after the new session appears before attaching, so the host's zmx has it listed.
+  static let restartReattachDelay: Duration = .seconds(1)
+
   static let pollInterval = RemoteKagePollSchedule.tickInterval
   /// How long after a quick answer the screen is re-read, so it shows the reaction.
   static let quickAnswerRefreshDelay: Duration = .milliseconds(300)
@@ -134,6 +147,12 @@ struct RemoteKageFeature {
     case settings(RemoteKageSettingsFeature.Action)
     case newTabCreated(RemoteKageTabKey)
     case dismissError
+    /// A tab on the host whose Claude Code runs as one of the host's accounts.
+    case newTabWithClaudeAccount(RemoteKageSelection, accountID: String)
+    /// Restart a host tab under one of the host's accounts (confirmed by the view).
+    case restartTab(RemoteKageTabKey, accountID: String)
+    case restartTabSent(RemoteKageTabKey)
+    case restartTabFailed(RemoteKageTabKey, RemoteKageError)
   }
 
   nonisolated enum CancelID: Hashable, Sendable {
@@ -232,6 +251,21 @@ struct RemoteKageFeature {
 
       case .settings:
         return .none
+
+      case .newTabWithClaudeAccount(let selection, let accountID):
+        return newTab(selection, command: "claude", claudeAccountID: accountID, &state)
+
+      case .restartTab(let key, let accountID):
+        return restartTab(key, accountID: accountID, &state)
+
+      case .restartTabSent(let key):
+        // Re-poll now so the new session shows up fast.
+        return fetchSnapshot(key.hostID, &state)
+
+      case .restartTabFailed(let key, let error):
+        state.pendingRestarts[key] = nil
+        state.lastError = error.localizedDescription
+        return .none
       }
     }
   }
@@ -306,6 +340,9 @@ struct RemoteKageFeature {
     for key in state.pendingNewTabs.keys where key.hostID == hostID {
       state.pendingNewTabs[key] = nil
     }
+    for key in state.pendingRestarts.keys where key.hostID == hostID {
+      state.pendingRestarts[key] = nil
+    }
     let screenFetches = state.screensInFlight.filter { $0.hostID == hostID }
     state.screensInFlight.subtract(screenFetches)
     return .merge(
@@ -377,7 +414,8 @@ struct RemoteKageFeature {
       state.hostStates[hostID] = hostState
       pruneVanishedTabs(of: hostID, in: snapshot, &state)
       resolvePendingNewTabs(of: host, in: snapshot, &state)
-      return notifyNewlyAwaiting(host: host, previous: previous, current: snapshot, state: state)
+      let reattach = resolvePendingRestarts(of: host, in: snapshot, &state)
+      return .merge(reattach, notifyNewlyAwaiting(host: host, previous: previous, current: snapshot, state: state))
     }
   }
 
@@ -502,7 +540,12 @@ struct RemoteKageFeature {
     }
   }
 
-  private func newTab(_ selection: RemoteKageSelection, command: String?, _ state: inout State) -> Effect<Action> {
+  private func newTab(
+    _ selection: RemoteKageSelection,
+    command: String?,
+    claudeAccountID: String? = nil,
+    _ state: inout State
+  ) -> Effect<Action> {
     guard let host = state.host(selection.hostID) else { return .none }
     let tabID = uuid()
     let key = RemoteKageTabKey(hostID: host.id, tabID: tabID.uuidString)
@@ -511,12 +554,76 @@ struct RemoteKageFeature {
     let cliPath = reportedCLIPath.isEmpty ? RemoteKageCommand.defaultCLIPath : reportedCLIPath
     return .run { [client] send in
       do {
-        try await client.newTab(host, cliPath, selection.worktreeID, tabID, command)
+        if let claudeAccountID {
+          try await client.newClaudeAccountTab(
+            host, cliPath, selection.worktreeID, tabID, claudeAccountID, command ?? "claude")
+        } else {
+          try await client.newTab(host, cliPath, selection.worktreeID, tabID, command)
+        }
         await send(.newTabCreated(key))
       } catch is CancellationError {
         return
       } catch {
         await send(.newTabFailed(selection, .wrapping(error)))
+      }
+    }
+  }
+}
+
+// MARK: - Restart under a host account.
+
+extension RemoteKageFeature {
+  private func restartTab(_ key: RemoteKageTabKey, accountID: String, _ state: inout State) -> Effect<Action> {
+    guard let host = state.host(key.hostID),
+      let snapshot = state.snapshot(for: key.hostID),
+      let location = RemoteKageSnapshotDiff.location(ofTab: key.tabID, in: snapshot)
+    else { return .none }
+    state.pendingRestarts[key] = PendingRestart(
+      oldSession: location.tab.zmxSession,
+      reattach: state.attachedTabs.contains(key)
+    )
+    let cliPath = (snapshot.cliPath ?? "").isEmpty ? RemoteKageCommand.defaultCLIPath : snapshot.cliPath ?? ""
+    return .run { [client] send in
+      do {
+        try await client.restartTab(host, cliPath, location.worktreeID, location.tab.id, accountID)
+        await send(.restartTabSent(key))
+      } catch is CancellationError {
+        return
+      } catch {
+        await send(.restartTabFailed(key, .wrapping(error)))
+      }
+    }
+  }
+
+  /// A restart is done when the tab reports a session other than the one it
+  /// ended. The old session's end detached a live terminal (`onExit`), so one
+  /// that was attached is attached again, after the host's zmx has listed it.
+  fileprivate func resolvePendingRestarts(
+    of host: RemoteKageHost,
+    in snapshot: HostSnapshot,
+    _ state: inout State
+  ) -> Effect<Action> {
+    var reattach: [RemoteKageTabKey] = []
+    for (key, pending) in state.pendingRestarts where key.hostID == host.id {
+      guard let location = RemoteKageSnapshotDiff.location(ofTab: key.tabID, in: snapshot) else {
+        state.pendingRestarts[key] = nil
+        continue
+      }
+      if location.tab.zmxSession != pending.oldSession {
+        state.pendingRestarts[key] = nil
+        if pending.reattach, location.tab.zmxSession != nil { reattach.append(key) }
+      } else if pending.snapshotsWaited + 1 >= Self.newTabSnapshotLimit {
+        state.pendingRestarts[key] = nil
+        state.lastError = "The tab didn't restart on \(host.name)."
+      } else {
+        state.pendingRestarts[key]?.snapshotsWaited += 1
+      }
+    }
+    guard !reattach.isEmpty else { return .none }
+    return .run { [clock, reattach] send in
+      try await clock.sleep(for: Self.restartReattachDelay)
+      for key in reattach {
+        await send(.attachTab(key))
       }
     }
   }

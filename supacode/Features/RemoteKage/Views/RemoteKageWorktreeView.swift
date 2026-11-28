@@ -54,6 +54,13 @@ private struct RemoteKageWorktreeContent: View {
   @State private var pendingFileToOpen: URL?
   /// Debug driver only (`explorer-root:`).
   @State private var debugExplorerRoot: URL?
+  /// A tab restart under another host account, awaiting confirmation.
+  @State private var pendingRestart: RemoteKageRestartRequest?
+
+  /// The host's accounts the menus offer; empty with one account or an older host.
+  private var claudeAccounts: [HostSnapshot.ClaudeAccountInfo] {
+    RemoteKageClaudeAccounts.menuAccounts(snapshot?.claudeAccounts)
+  }
 
   var body: some View {
     let selectedTabID = RemoteKageWorktreeDetail.selectedTabID(
@@ -104,14 +111,21 @@ private struct RemoteKageWorktreeContent: View {
           isFileExplorerVisible: isFileExplorerVisible,
           fileExplorerShortcut: AppShortcuts.toggleFileExplorer.effective(from: settingsFile.global.shortcutOverrides),
           toggleFileExplorer: toggleFileExplorer,
-          newTab: { command in store.send(.newTab(selection, command: command)) }
+          newTab: { command in store.send(.newTab(selection, command: command)) },
+          claudeAccounts: claudeAccounts,
+          newClaudeTab: { accountID in store.send(.newTabWithClaudeAccount(selection, accountID: accountID)) }
         )
         RemoteKageTabStrip(
           hostID: host.id,
           tabs: worktree.tabs,
           selectedTabID: selectedTabID,
           attachedTabs: store.attachedTabs,
-          select: { tabID in store.send(.selectTab(selection, tabID: tabID)) }
+          claudeAccounts: claudeAccounts,
+          restartingTabs: Set(store.pendingRestarts.keys),
+          select: { tabID in store.send(.selectTab(selection, tabID: tabID)) },
+          restart: { tab, account in
+            pendingRestart = RemoteKageRestartRequest(tabID: tab.id, tabTitle: tab.title, account: account)
+          }
         )
         Divider()
         HStack(spacing: 0) {
@@ -198,6 +212,30 @@ private struct RemoteKageWorktreeContent: View {
     } message: {
       Text("Opening another file replaces the edits in the viewer.")
     }
+    .confirmationDialog(
+      "Restart Tab as \(pendingRestart?.account.name ?? "")?",
+      isPresented: Binding(
+        get: { pendingRestart != nil },
+        set: { if !$0 { pendingRestart = nil } }
+      )
+    ) {
+      Button("Restart Tab", role: .destructive) {
+        if let request = pendingRestart {
+          store.send(
+            .restartTab(RemoteKageTabKey(hostID: host.id, tabID: request.tabID), accountID: request.account.id))
+        }
+        pendingRestart = nil
+      }
+      Button("Cancel", role: .cancel) { pendingRestart = nil }
+    } message: {
+      Text(
+        """
+        Restarting ends this tab's session on \(host.name) and stops everything running in it. \
+        Claude Code resumes the same conversation as \(pendingRestart?.account.name ?? "that account"), \
+        started the way it was before.
+        """
+      )
+    }
     #if DEBUG
       .onChange(of: RemoteKageFilesDebugCommands.shared.latest?.sequence) { _, _ in
         guard let command = RemoteKageFilesDebugCommands.shared.latest?.command else { return }
@@ -275,6 +313,8 @@ private struct RemoteKageWorktreeHeader: View {
   let fileExplorerShortcut: AppShortcut?
   let toggleFileExplorer: () -> Void
   let newTab: (_ command: String?) -> Void
+  let claudeAccounts: [HostSnapshot.ClaudeAccountInfo]
+  let newClaudeTab: (_ accountID: String) -> Void
 
   var body: some View {
     HStack(spacing: 8) {
@@ -302,14 +342,40 @@ private struct RemoteKageWorktreeHeader: View {
         newTab(nil)
       }
       .help("Open a new shell tab in this worktree on \(hostName)")
-      Button("New Claude Tab", systemImage: "sparkles") {
-        newTab("claude")
+      if claudeAccounts.isEmpty {
+        Button("New Claude Tab", systemImage: "sparkles") {
+          newTab("claude")
+        }
+        .help("Open a new tab running claude in this worktree on \(hostName)")
+      } else {
+        Menu {
+          Section("New Claude Tab as") {
+            ForEach(claudeAccounts, id: \.id) { account in
+              Button(account.menuTitle) {
+                newClaudeTab(account.id)
+              }
+              .help("Open a new tab on \(hostName) running claude as \(account.name)")
+            }
+          }
+        } label: {
+          Label("New Claude Tab", systemImage: "sparkles")
+        } primaryAction: {
+          newTab("claude")
+        }
+        .fixedSize()
+        .help("Open a new tab running claude in this worktree on \(hostName); the arrow picks the Claude account")
       }
-      .help("Open a new tab running claude in this worktree on \(hostName)")
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 8)
   }
+}
+
+/// A restart asked for from a tab's context menu, awaiting confirmation.
+private struct RemoteKageRestartRequest: Equatable {
+  let tabID: String
+  let tabTitle: String
+  let account: HostSnapshot.ClaudeAccountInfo
 }
 
 private struct RemoteKageTabStrip: View {
@@ -317,18 +383,43 @@ private struct RemoteKageTabStrip: View {
   let tabs: [HostSnapshot.Tab]
   let selectedTabID: String?
   let attachedTabs: Set<RemoteKageTabKey>
+  let claudeAccounts: [HostSnapshot.ClaudeAccountInfo]
+  let restartingTabs: Set<RemoteKageTabKey>
   let select: (String) -> Void
+  let restart: (HostSnapshot.Tab, HostSnapshot.ClaudeAccountInfo) -> Void
 
   var body: some View {
     ScrollView(.horizontal) {
       HStack(spacing: 4) {
         ForEach(tabs) { tab in
+          let key = RemoteKageTabKey(hostID: hostID, tabID: tab.id)
           RemoteKageTabButton(
             tab: tab,
             isSelected: tab.id == selectedTabID,
-            isAttached: attachedTabs.contains(RemoteKageTabKey(hostID: hostID, tabID: tab.id)),
+            isAttached: attachedTabs.contains(key),
+            accountTag: RemoteKageClaudeAccounts.tagName(of: tab, accounts: claudeAccounts),
+            isRestarting: restartingTabs.contains(key),
             select: { select(tab.id) }
           )
+          .contextMenu {
+            if !claudeAccounts.isEmpty {
+              let current = RemoteKageClaudeAccounts.currentAccountID(of: tab, accounts: claudeAccounts)
+              Menu("Restart Tab with Claude Account") {
+                ForEach(claudeAccounts, id: \.id) { account in
+                  Button {
+                    restart(tab, account)
+                  } label: {
+                    if account.id == current {
+                      Label(account.menuTitle, systemImage: "checkmark")
+                    } else {
+                      Text(account.menuTitle)
+                    }
+                  }
+                  .disabled(account.id == current || restartingTabs.contains(key))
+                }
+              }
+            }
+          }
         }
       }
       .padding(.horizontal, 12)
@@ -342,6 +433,8 @@ private struct RemoteKageTabButton: View {
   let tab: HostSnapshot.Tab
   let isSelected: Bool
   let isAttached: Bool
+  let accountTag: String?
+  let isRestarting: Bool
   let select: () -> Void
 
   var body: some View {
@@ -357,7 +450,24 @@ private struct RemoteKageTabButton: View {
         Text(title)
           .appFont(.callout, weight: tab.isAwaitingInput ? .semibold : nil)
           .lineLimit(1)
+        if let accountTag {
+          Text(accountTag)
+            .appFont(.caption2)
+            .lineLimit(1)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(.quaternary, in: .capsule)
+            .fixedSize()
+            .help("Claude Code in this tab runs as \(accountTag)")
+            .accessibilityLabel("Claude account \(accountTag)")
+        }
         AgentAvatarGroupView(instances: RemoteKageSidebarModel.agentInstances(for: [tab]).known, size: 12)
+        if isRestarting {
+          ProgressView()
+            .controlSize(.mini)
+            .accessibilityLabel("Restarting")
+        }
         if tab.isAwaitingInput {
           RemoteKageAwaitingInputMark()
         }

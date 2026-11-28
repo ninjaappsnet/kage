@@ -17,6 +17,10 @@ struct ClaudeAccountsFeature {
     /// Last plan usage fetched per logged-in account. A failed fetch keeps the
     /// previous value: the endpoint is undocumented and a stale number beats none.
     var usages: [ClaudeAccountID: UsageSnapshot] = [:]
+    /// Why the last usage fetch failed, per account; cleared by the next success.
+    var usageFailures: [ClaudeAccountID: ClaudeUsageError] = [:]
+    /// When Kage last had Claude Code renew each account's access token.
+    var accessTokenRenewals: [ClaudeAccountID: Date] = [:]
     var newAccountName = ""
     var isAddAccountPresented = false
     var login: LoginState?
@@ -87,6 +91,7 @@ struct ClaudeAccountsFeature {
     case usagePanelAppeared
     case usagePanelDisappeared
     case refreshLoggedInUsages
+    case accessTokenRenewed(ClaudeAccountID, Result<Void, Error>)
     case addAccountButtonTapped
     case addAccountCancelled
     case addAccountConfirmed
@@ -110,6 +115,12 @@ struct ClaudeAccountsFeature {
     case restartTabRequested(ClaudeAccountID, Worktree, tabID: TabID?)
     case restartTabAlert(PresentationAction<RestartTabAlert>)
     case alert(PresentationAction<Alert>)
+    /// From a viewing Mac (`kage host claude-tab new`): the tab about to be
+    /// created with this id runs Claude Code as the account.
+    case tabAssignmentRequested(tabID: UUID, ClaudeAccountID)
+    /// A restart already confirmed (by this Mac's alert, or by the viewing Mac
+    /// that asked through `kage host claude-tab restart`).
+    case restartTabConfirmed(ClaudeAccountID, Worktree, tabID: TabID, focus: Bool)
   }
 
   enum Alert: Equatable {
@@ -123,6 +134,8 @@ struct ClaudeAccountsFeature {
   nonisolated static let usageMinimumInterval: TimeInterval = 60
   /// How often the sidebar usage panel re-fetches while it is visible.
   nonisolated static let usagePanelRefreshInterval: Duration = .seconds(5 * 60)
+  /// Minimum gap between two access-token renewals for the same account.
+  nonisolated static let accessTokenRenewalInterval: TimeInterval = 60 * 60
   /// Minimum gap between two reminders about the same account.
   nonisolated static let reminderInterval: TimeInterval = 24 * 60 * 60
 
@@ -220,10 +233,14 @@ struct ClaudeAccountsFeature {
       case .usageLoaded(let id, .success(let usage)):
         guard state.file.account(id: id) != nil else { return .none }
         state.usages[id] = UsageSnapshot(usage: usage, fetchedAt: now)
+        state.usageFailures[id] = nil
         return .none
 
-      case .usageLoaded:
-        return .none
+      case .usageLoaded(let id, .failure(let error)):
+        guard state.file.account(id: id) != nil else { return .none }
+        // Kept beside the last good usage, so the panel can say why it is missing.
+        state.usageFailures[id] = error as? ClaudeUsageError
+        return renewAccessTokenIfNeeded(id, after: error, &state)
 
       case .usagePanelAppeared:
         return .run { [clock] send in
@@ -236,6 +253,15 @@ struct ClaudeAccountsFeature {
 
       case .usagePanelDisappeared:
         return .cancel(id: CancelID.usagePanel)
+
+      case .accessTokenRenewed(let id, .success):
+        // The fetch this follows failed: try again now, past the once-a-minute throttle.
+        state.usages[id]?.fetchedAt = .distantPast
+        return .send(.refreshUsage(id))
+
+      case .accessTokenRenewed(let id, .failure(let error)):
+        Self.logger.warning("Renewing the access token of Claude account \(id) failed: \(error.localizedDescription)")
+        return .none
 
       case .refreshLoggedInUsages:
         let ids = state.file.allAccounts.map(\.id).filter { id in
@@ -446,6 +472,14 @@ struct ClaudeAccountsFeature {
 
       case .restartTabAlert(let action):
         return reduceRestartTabAlert(&state, action: action)
+
+      case .tabAssignmentRequested(let tabID, let accountID):
+        guard state.file.account(id: accountID) != nil else { return .none }
+        state.$file.withLock { $0.tabAccountIDs[tabID.uuidString] = accountID }
+        return .none
+
+      case .restartTabConfirmed(let accountID, let worktree, let tabID, let focus):
+        return reduceRestartTabConfirmed(&state, accountID: accountID, worktree: worktree, tabID: tabID, focus: focus)
       }
     }
   }
@@ -453,6 +487,30 @@ struct ClaudeAccountsFeature {
   /// Notifies when an account needs logging in again, at most once a day per
   /// account. Accounts that were never logged in, or that the user logged out
   /// themselves, stay quiet: there is nothing to remind them about.
+  private static let logger = SupaLogger("ClaudeAccounts")
+
+  /// An expired access token while the login itself is valid: Claude Code renews
+  /// it only when it next needs it, so an account no session is using shows no
+  /// usage. Have Claude Code renew it (`ClaudeAccessTokenRenewal`), at most once
+  /// an hour per account, so a renewal that doesn't help never loops.
+  private func renewAccessTokenIfNeeded(
+    _ id: ClaudeAccountID,
+    after error: Error,
+    _ state: inout State
+  ) -> Effect<Action> {
+    guard (error as? ClaudeUsageError) == .tokenExpired,
+      case .loaded(let status) = state.statuses[id], status.loggedIn,
+      let account = state.file.account(id: id)
+    else { return .none }
+    if let last = state.accessTokenRenewals[id], now.timeIntervalSince(last) < Self.accessTokenRenewalInterval {
+      return .none
+    }
+    state.accessTokenRenewals[id] = now
+    return .run { [client] send in
+      await send(.accessTokenRenewed(id, Result { try await client.renewAccessToken(account) }))
+    }
+  }
+
   private func remindIfNeeded(state: inout State, accountID: ClaudeAccountID, status: ClaudeAuthStatus) -> Effect<
     Action
   > {

@@ -448,8 +448,8 @@ final class WorktreeTerminalManager {
       }
       sendLayout(worktree.id, .closeTab(id: owningTab))
       emit(.tabRemoved(worktreeID: worktree.id, tabID: owningTab))
-    case .restartTab(let worktree, let tabID, let resume):
-      restartTab(in: worktree, tabID: tabID, resume: resume)
+    case .restartTab(let worktree, let tabID, let resume, let focus):
+      restartTab(in: worktree, tabID: tabID, resume: resume, focus: focus)
     default:
       return false
     }
