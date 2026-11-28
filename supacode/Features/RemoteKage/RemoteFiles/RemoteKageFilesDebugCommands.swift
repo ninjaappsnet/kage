@@ -25,6 +25,7 @@ nonisolated struct RemoteKageFilesDebugCommand: Equatable, Sendable {
 /// - `mark:<text>`: only logged, to bracket a measurement in the app log
 /// - `explorer:on` / `explorer:off`, `explorer-root:<path>`: show the explorer, re-root it
 /// - `open:<path>`, `append:<text>`, `save`, `reload`, `close`: drive the viewer pane
+/// - `import:<local path>|<remote directory>`: copy onto the host as a drop on the explorer does
 @MainActor
 @Observable
 final class RemoteKageFilesDebugCommands {

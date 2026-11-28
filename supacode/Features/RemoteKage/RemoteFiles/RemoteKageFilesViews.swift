@@ -8,6 +8,8 @@ import SwiftUI
 struct RemoteKageExplorerColumn: View {
   let hostName: String
   let source: RemoteFileSystemSource
+  /// Copies dropped or pasted files onto the host.
+  let importer: FileExplorerImporter
   let rootURL: URL
   let openFileURL: URL?
   let status: RemoteKageServeSession.Status?
@@ -21,6 +23,7 @@ struct RemoteKageExplorerColumn: View {
         rootURL: rootURL,
         source: source,
         openFileURL: openFileURL,
+        importer: importer,
         onOpenFile: onOpenFile,
         onClose: onClose
       )

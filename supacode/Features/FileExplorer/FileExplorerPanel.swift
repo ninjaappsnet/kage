@@ -2,6 +2,7 @@ import AppKit
 import Sharing
 import SupacodeSettingsShared
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Left-docked file/folder explorer for the selected worktree, modeled on Warp's
 /// project panel. Lists the active terminal's working directory as an expandable
@@ -21,6 +22,11 @@ struct FileExplorerPanel: View {
   private let openFileURL: URL?
   private let onClose: () -> Void
   @State private var model: FileExplorerModel
+  /// Copies dropped or pasted files in (`FileExplorerImporter`); nil when the
+  /// caller offers no way to copy onto this disk.
+  @State private var importModel: FileExplorerImportModel?
+  @State private var isRootDropTargeted = false
+  @FocusState private var isTreeFocused: Bool
   @State private var width: CGFloat = 260
   @Shared(.appStorage("fileExplorerWidth")) private var storedWidth = 260.0
   @Shared(.settingsFile) private var settingsFile
@@ -32,6 +38,7 @@ struct FileExplorerPanel: View {
     rootURL: URL,
     source: any FileSystemSource = LocalFileSystemSource(),
     openFileURL: URL? = nil,
+    importer: FileExplorerImporter? = .local,
     onOpenFile: ((URL) -> Void)? = nil,
     onClose: @escaping () -> Void
   ) {
@@ -41,6 +48,7 @@ struct FileExplorerPanel: View {
     let model = FileExplorerModel(rootURL: rootURL, source: source)
     model.onOpenFile = onOpenFile
     _model = State(initialValue: model)
+    _importModel = State(initialValue: importer.map(FileExplorerImportModel.init(importer:)))
   }
 
   var body: some View {
@@ -73,7 +81,20 @@ struct FileExplorerPanel: View {
         connectionBanner(message)
         Divider()
       }
+      if let importModel, let status = importModel.status {
+        FileExplorerImportStatusView(status: status, onDismiss: importModel.dismissStatus)
+        Divider()
+      }
       tree
+        .modifier(
+          FileExplorerImportTargetModifier(
+            isEnabled: importModel != nil,
+            isTargeted: $isRootDropTargeted,
+            isFocused: $isTreeFocused,
+            onImport: { urls in importFiles(urls, onto: nil) },
+            onCopySelection: copySelectionCommand
+          )
+        )
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     .background(.bar)
@@ -139,6 +160,8 @@ struct FileExplorerPanel: View {
               row: row,
               isSelected: model.selectedURL == row.node.url,
               model: model,
+              onImport: importModel == nil ? nil : { urls in importFiles(urls, onto: row.node) },
+              onActivate: { isTreeFocused = true },
             )
           }
         }
@@ -193,6 +216,19 @@ struct FileExplorerPanel: View {
   private static func clamp(_ value: CGFloat) -> CGFloat {
     min(max(value, minWidth), maxWidth)
   }
+
+  /// Copies `urls` into the folder `node` stands for (the root for empty space).
+  private func importFiles(_ urls: [URL], onto node: FileExplorerNode?) {
+    guard let importModel else { return }
+    let directory = FileExplorerImportTarget.directory(onto: node, root: model.rootURL)
+    Task { await importModel.importItems(urls, into: directory) { await model.reload() } }
+  }
+
+  /// Cmd+C on a selected file on this Mac puts the file itself on the pasteboard.
+  private var copySelectionCommand: (() -> [NSItemProvider])? {
+    guard model.isLocal, let selected = model.selectedURL else { return nil }
+    return { [NSItemProvider(object: selected as NSURL)] }
+  }
 }
 
 /// A single tree row: indentation, disclosure chevron for directories, a
@@ -203,6 +239,10 @@ private struct FileExplorerRowView: View {
   let row: FileExplorerRow
   let isSelected: Bool
   let model: FileExplorerModel
+  /// Copies files dropped or pasted on this row into its folder; nil when copying in is off.
+  let onImport: (([URL]) -> Void)?
+  let onActivate: () -> Void
+  @State private var isDropTargeted = false
 
   private var node: FileExplorerNode { row.node }
 
@@ -230,11 +270,26 @@ private struct FileExplorerRowView: View {
         .fill(Color.accentColor.opacity(isSelected ? 0.18 : 0))
         .padding(.horizontal, 4)
     )
+    .overlay {
+      if isDropTargeted {
+        RoundedRectangle(cornerRadius: 5)
+          .strokeBorder(.tint, lineWidth: 2)
+          .padding(.horizontal, 4)
+      }
+    }
+    .dropDestination(for: URL.self) { urls, _ in
+      guard let onImport, !FileExplorerImportTarget.importable(urls).isEmpty else { return false }
+      onImport(urls)
+      return true
+    } isTargeted: { targeted in
+      isDropTargeted = onImport != nil && targeted
+    }
     // Single tap only. A competing `.onTapGesture(count: 2)` made SwiftUI hold
     // every single click for the double-click interval — a measured 350ms of
     // dead time before the preview even started opening. Opening a file in its
     // default app lives in the context menu ("Open") instead.
     .onTapGesture {
+      onActivate()
       Task { await model.activate(node) }
     }
     .contextMenu {
@@ -246,8 +301,18 @@ private struct FileExplorerRowView: View {
         Button("Reveal in Finder") { model.revealInFinder(node) }
         Divider()
       }
+      if model.isLocal {
+        Button("Copy") { FileExplorerImportPasteboard.copy(node.url) }
+      }
       Button("Copy Path") { model.copyAbsolutePath(node) }
       Button("Copy Relative Path") { model.copyRelativePath(node) }
+      if let onImport {
+        Divider()
+        Button(node.isDirectory ? "Paste into “\(node.name)”" : "Paste") {
+          onImport(FileExplorerImportPasteboard.fileURLs())
+        }
+        .disabled(!FileExplorerImportPasteboard.hasFiles)
+      }
     }
     .font(.callout)
     .accessibilityElement(children: .combine)

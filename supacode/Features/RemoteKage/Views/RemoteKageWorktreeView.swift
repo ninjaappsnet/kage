@@ -86,6 +86,7 @@ private struct RemoteKageWorktreeContent: View {
         RemoteKageExplorerColumn(
           hostName: host.name,
           source: source,
+          importer: .remote(host: host),
           rootURL: debugExplorerRoot
             ?? RemoteKageFiles.explorerRootURL(
               tabs: worktree.tabs,
@@ -292,6 +293,20 @@ private struct RemoteKageWorktreeContent: View {
         if let viewer { Task { await viewer.reloadFromDisk() } }
       case "close":
         viewers[selection] = nil
+      case "import":
+        // `import:<local path>|<remote directory>`: the explorer's copy, without a drag.
+        let parts = command.argument.split(separator: "|", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return }
+        let host = host
+        Task {
+          do {
+            let landed = try await FileExplorerImporter.remote(host: host).importItems(
+              [URL(filePath: parts[0])], URL(filePath: parts[1], directoryHint: .isDirectory))
+            RemoteFileImport.debugLogger.info("Debug import landed: \(landed)")
+          } catch {
+            RemoteFileImport.debugLogger.error("Debug import failed: \(error.localizedDescription)")
+          }
+        }
       default:
         break
       }
