@@ -200,5 +200,6 @@ tab under another one, as locally. Built on `feat/claude-launch-replay-remote-ac
 - Needs the new release on both Macs; an older host shows the plain button.
 - Status: unit, reducer and CLI-to-socket tests pass; the remote view checked in
   the sandbox against mini-1 on the old release (plain button, unchanged).
-  Still open: once the minis run the release, check the account menu, restart
-  and re-attach against a mini by hand.
+  Merged (PR #15) and released as 1.6.0 on 2026-11-28 (bump 654a7253).
+  Still open: once the minis run 1.6.0, check the account menu, restart and
+  re-attach against a mini by hand.
