@@ -42,6 +42,40 @@ nonisolated struct RemoteKageSidebarExpansion: Equatable, RawRepresentable, Send
     set(Self.key(host: hostID, group: group), expanded: expanded)
   }
 
+  /// The repository's collapsed branch groups (`RemoteKageBranchNesting`).
+  func collapsedBranchGroups(host hostID: RemoteKageHost.ID, repository: String) -> Set<
+    RemoteKageBranchNesting.GroupKey
+  > {
+    let start = Self.branchKeyStart(host: hostID, repository: repository)
+    return Set(
+      collapsed.compactMap { key -> RemoteKageBranchNesting.GroupKey? in
+        guard key.hasPrefix(start) else { return nil }
+        let rest = key.dropFirst(start.count)
+        guard let slash = rest.firstIndex(of: "/"),
+          let bucket = RemoteKageBranchNesting.Bucket(rawValue: String(rest[..<slash]))
+        else { return nil }
+        return RemoteKageBranchNesting.GroupKey(bucket: bucket, prefix: String(rest[rest.index(after: slash)...]))
+      }
+    )
+  }
+
+  mutating func setBranchGroup(
+    host hostID: RemoteKageHost.ID,
+    repository: String,
+    _ key: RemoteKageBranchNesting.GroupKey,
+    expanded: Bool
+  ) {
+    set(
+      Self.branchKeyStart(host: hostID, repository: repository) + "\(key.bucket.rawValue)/\(key.prefix)",
+      expanded: expanded)
+  }
+
+  /// The repository id is percent-encoded so its slashes can't run into the prefix's.
+  private static func branchKeyStart(host hostID: RemoteKageHost.ID, repository: String) -> String {
+    let encoded = repository.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? repository
+    return "\(hostID.uuidString)/branch/\(encoded)/"
+  }
+
   /// Opens the host and the workspace the target names, leaving everything
   /// else as the user left it.
   func revealing(_ target: RemoteKageSidebarModel.RevealTarget) -> Self {
@@ -49,6 +83,17 @@ nonisolated struct RemoteKageSidebarExpansion: Equatable, RawRepresentable, Send
     next.setHost(target.hostID, expanded: true)
     if let groupID = target.groupID {
       next.setGroup(host: target.hostID, group: groupID, expanded: true)
+    }
+    if let repositoryID = target.repositoryID, let branch = target.branch {
+      // Every group prefix above the branch, as `SidebarBranchNesting.ancestorPrefixes`.
+      let parts = branch.split(separator: "/", omittingEmptySubsequences: true)
+      for end in parts.indices.dropFirst() {
+        let prefix = parts[..<end].joined(separator: "/")
+        for bucket in [RemoteKageBranchNesting.Bucket.pinned, .unpinned] {
+          next.setBranchGroup(
+            host: target.hostID, repository: repositoryID, .init(bucket: bucket, prefix: prefix), expanded: true)
+        }
+      }
     }
     return next
   }

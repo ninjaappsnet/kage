@@ -69,6 +69,9 @@ nonisolated struct HostSnapshot: Codable, Equatable, Sendable {
     var isPinned: Bool
     /// Terminal tabs only (file viewer tabs are omitted), in strip order.
     var tabs: [Tab]
+    /// The git branch the worktree is on; `name` may be a custom title. Nil from
+    /// an older host, whose viewer then nests by `name`.
+    var branch: String?
   }
 
   nonisolated struct Tab: Codable, Equatable, Sendable, Identifiable {

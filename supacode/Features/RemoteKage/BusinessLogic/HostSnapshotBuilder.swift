@@ -80,7 +80,8 @@ nonisolated enum HostSnapshotBuilder {
                 workingDirectory: tab.workingDirectory,
                 claudeAccountID: tab.claudeAccountID
               )
-            }
+            },
+            branch: entry.worktree.name
           )
         }
       )

@@ -342,8 +342,8 @@ struct RemoteKageSidebarModelTests {
     let inWorkspace = model.revealTarget(for: RemoteKageSelection(hostID: hostID, worktreeID: "a-main"))
     let inUngrouped = model.revealTarget(for: RemoteKageSelection(hostID: hostID, worktreeID: "loose-main"))
 
-    #expect(inWorkspace == .init(hostID: hostID, groupID: .workspace("w1")))
-    #expect(inUngrouped == .init(hostID: hostID, groupID: .ungrouped))
+    #expect(inWorkspace == .init(hostID: hostID, groupID: .workspace("w1"), repositoryID: "a", branch: "a-main"))
+    #expect(inUngrouped == .init(hostID: hostID, groupID: .ungrouped, repositoryID: "loose", branch: "loose-main"))
   }
 
   @Test func revealTargetFallsBackToTheHostBeforeItsSnapshotArrives() {
