@@ -243,6 +243,17 @@ struct HostSnapshotBuilderTests {
     #expect(worktrees.map(\.name) == ["main", "Shiny"])
   }
 
+  @Test func worktreesCarryTheirBranchBesideACustomTitle() throws {
+    let repo = makeRepository("/tmp/r", branches: ["feat/rf-picker"])
+    var sidebar = SidebarState()
+    sidebar.insert(worktree: WorktreeID("/tmp/r/feat/rf-picker"), in: repo.id, bucket: .unpinned)
+    sidebar.setCustomization(
+      title: "Picker", color: nil, worktree: WorktreeID("/tmp/r/feat/rf-picker"), in: repo.id)
+    let worktrees = try firstRepository(build(repositories: [repo], sidebar: sidebar)).worktrees
+    #expect(worktrees.map(\.name) == ["main", "Picker"])
+    #expect(worktrees.map(\.branch) == ["main", "feat/rf-picker"])
+  }
+
   // MARK: - Tabs
 
   @Test func tabsKeepOrderFocusAndTitles() throws {

@@ -66,6 +66,8 @@ struct RemoteKageSidebarModel: Equatable {
     var unknownAgentCount: Int
     var isAwaitingInput: Bool
     var isBusy: Bool
+    /// The branch to nest by (`HostSnapshot.Worktree.branch`); nil from an older host.
+    var branch: String?
 
     var id: RemoteKageSelection { selection }
   }
@@ -98,16 +100,26 @@ struct RemoteKageSidebarModel: Equatable {
   struct RevealTarget: Equatable {
     var hostID: RemoteKageHost.ID
     var groupID: Group.GroupID?
+    /// The repository and branch holding the worktree, so the branch groups
+    /// above it open too (`RemoteKageBranchNesting`).
+    var repositoryID: String?
+    var branch: String?
   }
 
   func revealTarget(for selection: RemoteKageSelection?) -> RevealTarget? {
     guard let selection, let host = hosts.first(where: { $0.id == selection.hostID }) else { return nil }
-    let group = host.groups?.first { group in
-      group.repositories.contains { repository in
-        repository.worktrees.contains { $0.selection == selection }
+    for group in host.groups ?? [] {
+      for repository in group.repositories {
+        guard let worktree = repository.worktrees.first(where: { $0.selection == selection }) else { continue }
+        return RevealTarget(
+          hostID: host.id,
+          groupID: group.id,
+          repositoryID: repository.id,
+          branch: worktree.branch ?? worktree.name
+        )
       }
     }
-    return RevealTarget(hostID: host.id, groupID: group?.id)
+    return RevealTarget(hostID: host.id, groupID: nil)
   }
 
   /// The host's own grouping: its workspaces in switcher order (empty ones
@@ -177,7 +189,8 @@ struct RemoteKageSidebarModel: Equatable {
           agents: agents.known,
           unknownAgentCount: agents.unknownCount,
           isAwaitingInput: worktree.tabs.contains(where: \.isAwaitingInput),
-          isBusy: worktree.tabs.contains(where: \.isBusy)
+          isBusy: worktree.tabs.contains(where: \.isBusy),
+          branch: worktree.branch
         )
       }
     )

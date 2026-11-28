@@ -74,7 +74,8 @@ private struct RemoteKageHostSection: View {
               .moveDisabled(true)
           }
           ForEach(groups) { group in
-            RemoteKageGroupRows(hostName: host.name, group: group, isExpanded: groupBinding(group.id))
+            RemoteKageGroupRows(
+              hostID: host.id, hostName: host.name, group: group, isExpanded: groupBinding(group.id))
           }
         } else {
           RemoteKageHostStatusRow(indicator: host.indicator)
@@ -85,6 +86,7 @@ private struct RemoteKageHostSection: View {
 }
 
 private struct RemoteKageGroupRows: View {
+  let hostID: RemoteKageHost.ID
   let hostName: String
   let group: RemoteKageSidebarModel.Group
   @Binding var isExpanded: Bool
@@ -100,15 +102,19 @@ private struct RemoteKageGroupRows: View {
     // A host without workspaces has one untitled group that cannot collapse.
     if isExpanded || group.title == nil {
       ForEach(group.repositories) { repository in
-        RemoteKageRepositoryRows(hostName: hostName, repository: repository)
+        RemoteKageRepositoryRows(hostID: hostID, hostName: hostName, repository: repository)
       }
     }
   }
 }
 
 private struct RemoteKageRepositoryRows: View {
+  let hostID: RemoteKageHost.ID
   let hostName: String
   let repository: RemoteKageSidebarModel.Repository
+  /// The local setting: remote worktrees nest by branch exactly when local ones do.
+  @Shared(.sidebarNestWorktreesByBranch) private var nestWorktreesByBranch: Bool
+  @Shared(.remoteKageSidebarExpansion) private var expansion: RemoteKageSidebarExpansion
 
   var body: some View {
     if let worktree = repository.soleWorktree {
@@ -123,19 +129,74 @@ private struct RemoteKageRepositoryRows: View {
       .tag(SidebarSelection.remoteKage(worktree.selection))
     } else {
       RemoteKageRepositoryLabel(repository: repository)
-      ForEach(repository.worktrees) { worktree in
-        RemoteKageWorktreeRowView(
-          hostName: hostName,
-          repositoryName: repository.name,
-          title: worktree.name,
-          subtitle: nil,
-          tint: nil,
-          worktree: worktree
-        )
-        .padding(.leading, 12)
-        .tag(SidebarSelection.remoteKage(worktree.selection))
+      let rows = RemoteKageBranchNesting.rows(
+        for: repository,
+        nestByBranch: nestWorktreesByBranch,
+        collapsed: expansion.collapsedBranchGroups(host: hostID, repository: repository.id)
+      )
+      ForEach(rows) { row in
+        switch row {
+        case .worktree(let worktree, let depth, let title):
+          RemoteKageWorktreeRowView(
+            hostName: hostName,
+            repositoryName: repository.name,
+            title: title,
+            subtitle: nil,
+            tint: nil,
+            worktree: worktree
+          )
+          .padding(.leading, 12 + CGFloat(depth) * SidebarNestLayout.indentStep)
+          .tag(SidebarSelection.remoteKage(worktree.selection))
+        case .group(let group):
+          RemoteKageBranchGroupHeader(group: group) {
+            $expansion.withLock {
+              $0.setBranchGroup(host: hostID, repository: repository.id, group.key, expanded: group.isCollapsed)
+            }
+          }
+          .padding(.leading, 12 + CGFloat(group.depth) * SidebarNestLayout.indentStep)
+        }
       }
     }
+  }
+}
+
+/// A branch path group among a remote repository's worktrees, like the local
+/// sidebar's group header: click to collapse or expand; a collapsed group shows
+/// what its worktrees are up to.
+private struct RemoteKageBranchGroupHeader: View {
+  let group: RemoteKageBranchNesting.Group
+  let toggle: () -> Void
+
+  var body: some View {
+    Button {
+      withAnimation(.easeOut(duration: 0.2)) { toggle() }
+    } label: {
+      HStack(spacing: 6) {
+        Image(systemName: "chevron.right")
+          .appFont(.caption, weight: .semibold)
+          .foregroundStyle(.secondary)
+          .rotationEffect(.degrees(group.isCollapsed ? 0 : 90))
+          .animation(.easeInOut(duration: 0.15), value: group.isCollapsed)
+          .frame(width: SidebarNestLayout.groupChevronWidth)
+          .padding(.trailing, SidebarNestLayout.leadingSlotWidth - SidebarNestLayout.groupChevronWidth)
+          .accessibilityHidden(true)
+        Text(group.label)
+          .appFont(.body)
+          .lineLimit(1)
+        Spacer(minLength: 0)
+        if group.isCollapsed {
+          if group.isAwaitingInput {
+            RemoteKageAwaitingInputMark()
+          }
+          AgentAvatarGroupView(instances: Array(group.worktrees.flatMap(\.agents).prefix(3)))
+        }
+      }
+      .contentShape(.interaction, .rect)
+    }
+    .buttonStyle(.plain)
+    .moveDisabled(true)
+    .help(group.isCollapsed ? "Expand \(group.label)" : "Collapse \(group.label)")
+    .accessibilityLabel("\(group.label) group, \(group.isCollapsed ? "collapsed" : "expanded")")
   }
 }
 
