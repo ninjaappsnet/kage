@@ -33,7 +33,9 @@ enum HostSnapshotRuntime {
       zmxPath: zmxClient.executableURL()?.path(percentEncoded: false),
       cliPath: resources?.appending(path: "bin/supacode", directoryHint: .notDirectory).path(percentEncoded: false),
       kageVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
-      machineName: Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+      machineName: Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
+      claudeAccounts: HostSnapshotBuilder.claudeAccounts(
+        file: store.claudeAccounts.file, usages: store.claudeAccounts.usages)
     )
   }
 
@@ -49,7 +51,8 @@ enum HostSnapshotRuntime {
           surfaceID: tab.content.id.rawValue,
           isTerminal: tab.content.kind == .terminal,
           usesZmx: !tab.content.state.isEphemeral,
-          workingDirectory: (runtime.content(for: tab.content.id) as? TerminalContent)?.reportedWorkingDirectory
+          workingDirectory: (runtime.content(for: tab.content.id) as? TerminalContent)?.reportedWorkingDirectory,
+          claudeAccountID: ClaudeSurfaceAccounts.byContentID[tab.content.id.rawValue]
         )
       }
     }

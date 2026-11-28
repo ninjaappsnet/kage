@@ -32,6 +32,8 @@ nonisolated struct ClaudeAccountsClient: Sendable {
   var applyMCPOperations: @Sendable (ClaudeAccount, [ClaudeMCPServerSync.Operation]) async throws -> Void
   /// Plan usage for the account's stored login; see `ClaudeCredentials.fetchUsage`.
   var usage: @Sendable (ClaudeAccount) async throws -> ClaudeUsage
+  /// Has Claude Code renew the account's expired access token; see `ClaudeAccessTokenRenewal`.
+  var renewAccessToken: @Sendable (ClaudeAccount) async throws -> Void
 }
 
 nonisolated extension ClaudeAccountsClient: DependencyKey {
@@ -80,6 +82,10 @@ nonisolated extension ClaudeAccountsClient: DependencyKey {
       },
       usage: { account in
         try await ClaudeCredentials.fetchUsage(for: account)
+      },
+      renewAccessToken: { account in
+        try await runner.run(
+          ClaudeAccessTokenRenewal.arguments, as: account, timeout: ClaudeAccessTokenRenewal.timeLimit)
       }
     )
   }()
@@ -93,7 +99,8 @@ nonisolated extension ClaudeAccountsClient: DependencyKey {
     prepareDirectory: { _ in ClaudeAccountLayout.Report() },
     readMCPServers: { _ in [:] },
     applyMCPOperations: { _, _ in },
-    usage: { _ in throw ClaudeUsageError.notLoggedIn }
+    usage: { _ in throw ClaudeUsageError.notLoggedIn },
+    renewAccessToken: { _ in }
   )
 }
 
@@ -139,11 +146,54 @@ actor ClaudeCLIRunner {
     return url
   }
 
+  /// Waits for `process` to finish, terminating it once `timeout` passes.
+  static func drain(
+    _ process: StreamingShellProcess,
+    timeout: Duration,
+    clock: any Clock<Duration>
+  ) async throws {
+    let timedOut = LockIsolated(false)
+    let watchdog = Task {
+      try await clock.sleep(for: timeout)
+      timedOut.setValue(true)
+      process.terminate()
+    }
+    defer { watchdog.cancel() }
+    do {
+      for try await event in process.events {
+        if case .finished = event { return }
+      }
+    } catch  where timedOut.value {
+      throw ClaudeAccountsError.commandFailed("claude ran longer than \(timeout) and was stopped.")
+    }
+    if timedOut.value {
+      throw ClaudeAccountsError.commandFailed("claude ran longer than \(timeout) and was stopped.")
+    }
+  }
+
+  /// Runs a command whose output doesn't matter, stopping it after `timeout`.
+  func run(_ arguments: [String], as account: ClaudeAccount, timeout: Duration) async throws {
+    let executable = try await executableURL()
+    @Dependency(\.shellClient) var shell
+    @Dependency(\.continuousClock) var clock
+    let process = shell.runLoginProcess(
+      URL(fileURLWithPath: "/usr/bin/env"),
+      Self.assignment(for: account) + [executable.path] + arguments,
+      nil,
+      log: false
+    )
+    try await Self.drain(process, timeout: timeout, clock: clock)
+  }
+
+  private static func assignment(for account: ClaudeAccount) -> [String] {
+    let variable = ClaudeAccount.configDirectoryVariable
+    return account.configDirectoryPath.map { ["\(variable)=\($0)"] } ?? ["-u", variable]
+  }
+
   func run(_ arguments: [String], as account: ClaudeAccount) async throws -> String {
     let executable = try await executableURL()
     @Dependency(\.shellClient) var shell
-    let variable = ClaudeAccount.configDirectoryVariable
-    let assignment = account.configDirectoryPath.map { ["\(variable)=\($0)"] } ?? ["-u", variable]
+    let assignment = Self.assignment(for: account)
     do {
       return try await shell.runLogin(
         URL(fileURLWithPath: "/usr/bin/env"),

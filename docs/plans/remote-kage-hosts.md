@@ -186,3 +186,19 @@ Everything else lives in `supacode/Features/RemoteKage/`.
   main run's `test` job failed twice on 1-minute time-outs
   (`RemoteFileServerTests`) while mini-2 ran other heavy work (load 45–160);
   the third attempt, at load ~4, passed and published.
+
+## Follow-up: host Claude accounts (2026-11-28)
+
+Open a remote tab under one of the host's Claude accounts, and restart a remote
+tab under another one, as locally. Built on `feat/claude-launch-replay-remote-accounts`.
+
+- Host: `HostSnapshot.claudeAccounts` and `Tab.claudeAccountID` (optional
+  fields, no schema bump); `kage host claude-tab new|restart` → socket query
+  `host-claude-tab` → the local `tabAssignmentRequested` / `restartTabConfirmed`.
+- Viewer: account menu on "New Claude Tab", "Restart Tab with Claude Account"
+  in the tab context menu, account tag on tabs, re-attach after restart.
+- Needs the new release on both Macs; an older host shows the plain button.
+- Status: unit, reducer and CLI-to-socket tests pass; the remote view checked in
+  the sandbox against mini-1 on the old release (plain button, unchanged).
+  Still open: once the minis run the release, check the account menu, restart
+  and re-attach against a mini by hand.

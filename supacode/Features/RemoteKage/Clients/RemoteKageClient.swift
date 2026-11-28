@@ -37,6 +37,18 @@ nonisolated struct RemoteKageClient: Sendable {
     @Sendable (
       _ host: RemoteKageHost, _ cliPath: String, _ worktreeID: String, _ tabID: UUID, _ command: String?
     ) async throws -> Void
+  /// Creates a tab on the host whose Claude Code runs as one of the host's
+  /// accounts (`supacode host claude-tab new`).
+  var newClaudeAccountTab:
+    @Sendable (
+      _ host: RemoteKageHost, _ cliPath: String, _ worktreeID: String, _ tabID: UUID, _ accountID: String,
+      _ command: String
+    ) async throws -> Void
+  /// Restarts a host tab under one of the host's accounts (`supacode host claude-tab restart`).
+  var restartTab:
+    @Sendable (
+      _ host: RemoteKageHost, _ cliPath: String, _ worktreeID: String, _ tabID: String, _ accountID: String
+    ) async throws -> Void
 }
 
 nonisolated extension RemoteKageClient: DependencyKey {
@@ -90,6 +102,23 @@ nonisolated extension RemoteKageClient: DependencyKey {
           arguments: RemoteKageCommand.newTabArguments(worktreeID: worktreeID, tabID: tabID, command: command),
           timeout: RemoteKageCommand.newTabTimeout
         )
+      },
+      newClaudeAccountTab: { host, cliPath, worktreeID, tabID, accountID, command in
+        _ = try await RemoteKageTransport.run(
+          host: host,
+          executable: cliPath,
+          arguments: RemoteKageCommand.newClaudeAccountTabArguments(
+            worktreeID: worktreeID, tabID: tabID, accountID: accountID, command: command),
+          timeout: RemoteKageCommand.newTabTimeout
+        )
+      },
+      restartTab: { host, cliPath, worktreeID, tabID, accountID in
+        _ = try await RemoteKageTransport.run(
+          host: host,
+          executable: cliPath,
+          arguments: RemoteKageCommand.restartTabArguments(worktreeID: worktreeID, tabID: tabID, accountID: accountID),
+          timeout: RemoteKageCommand.newTabTimeout
+        )
       }
     )
   }()
@@ -98,7 +127,9 @@ nonisolated extension RemoteKageClient: DependencyKey {
     snapshot: unimplemented("RemoteKageClient.snapshot", placeholder: HostSnapshot.placeholder),
     screen: unimplemented("RemoteKageClient.screen", placeholder: ""),
     send: unimplemented("RemoteKageClient.send"),
-    newTab: unimplemented("RemoteKageClient.newTab")
+    newTab: unimplemented("RemoteKageClient.newTab"),
+    newClaudeAccountTab: unimplemented("RemoteKageClient.newClaudeAccountTab"),
+    restartTab: unimplemented("RemoteKageClient.restartTab")
   )
 }
 

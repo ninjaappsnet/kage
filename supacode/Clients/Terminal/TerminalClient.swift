@@ -119,7 +119,7 @@ nonisolated struct TerminalClient: Sendable {
     case setTerminalHibernationEnabled(Bool)
     /// Fork: replaces the tab's terminal with a fresh session (new zmx session,
     /// re-resolved environment), keeping the tab. See `TerminalTabRestart`.
-    case restartTab(Worktree, tabID: TabID, resume: TerminalTabRestart.Resume?)
+    case restartTab(Worktree, tabID: TabID, resume: TerminalTabRestart.Resume?, focus: Bool = true)
   }
 
   enum Event: Equatable {

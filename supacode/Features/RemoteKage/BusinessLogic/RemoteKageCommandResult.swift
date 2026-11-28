@@ -37,7 +37,8 @@ nonisolated enum RemoteKageCommandResult {
       return .unreachable(lastLine(of: output, dropping: "ssh: ") ?? "ssh failed (exit \(exitCode)).")
     }
     if lowered.contains("unknown resource: host-snapshot")
-      || (exitCode == usageExitCode && lowered.contains("'host'"))
+      || lowered.contains("unknown resource: host-claude-tab")
+      || (exitCode == usageExitCode && (lowered.contains("'host'") || lowered.contains("'claude-tab'")))
     {
       return .needsUpdate
     }
